@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="ko">
-  
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -56,19 +55,36 @@
   .date-nav { display: flex; align-items: center; gap: 6px; }
   .date-btn { width: 30px; height: 30px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text2); font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; font-family: inherit; }
   .date-btn:hover { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
-  .date-label { font-size: 13px; font-weight: 600; color: var(--text); min-width: 130px; text-align: center; font-family: 'DM Mono', monospace; }
+  .date-label { font-size: 13px; font-weight: 600; color: var(--text); min-width: 160px; text-align: center; font-family: 'DM Mono', monospace; }
 
+  /* ── Weekly table view ── */
+  .week-table-wrap { overflow-x: auto; padding: 0; }
+  .week-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .week-table th, .week-table td { border: 1px solid var(--border); text-align: center; padding: 0; }
+  .week-table thead th { background: var(--surface2); font-weight: 700; font-size: 12px; padding: 7px 4px; position: sticky; top: 0; z-index: 2; }
+  .week-table thead th.time-col { width: 52px; min-width: 52px; }
+  .week-table thead th.today-col { background: var(--accent-bg); color: var(--accent); }
+  .week-table .time-cell { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text3); font-weight: 500; padding: 6px 4px; background: var(--surface2); white-space: nowrap; }
+  .week-cell { width: 100%; height: 100%; min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 2px; cursor: pointer; transition: background 0.12s; }
+  .week-cell:hover { filter: brightness(0.95); }
+  .week-cell.free { background: var(--surface); }
+  .week-cell.free:hover { background: var(--accent-bg); }
+  .week-cell.reserved { background: var(--reserved-bg); cursor: default; }
+  .week-cell.is-class { background: #eef2ff; cursor: not-allowed; }
+  .week-cell.today-col { background: #fffaf9; }
+  .week-cell.today-col.free:hover { background: var(--accent-bg); }
+  .week-cell-name { font-size: 11px; font-weight: 600; color: var(--reserved); max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .week-cell-label { font-size: 10px; color: var(--text3); }
+  .week-cell.is-class .week-cell-label { color: #4338ca; font-weight: 600; }
+  .week-cell.reserved .week-cell-label { color: var(--reserved); }
+  .week-cell-dot { width: 7px; height: 7px; border-radius: 50%; }
+  .dot-free { background: #ccc; }
+  .dot-reserved { background: var(--reserved); }
+  .dot-class { background: #818cf8; }
+
+  /* legacy (kept for modal reuse) */
   .slots-wrap { padding: 8px; }
   .slot-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: var(--radius-sm); margin-bottom: 3px; transition: background 0.12s; border: 1px solid transparent; }
-  .slot-row:hover { background: var(--surface2); }
-  .slot-row.reserved { background: var(--reserved-bg); border-color: #f0d5a0; }
-  .slot-row.mine { background: var(--success-bg); border-color: #aad8be; }
-  .slot-time { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--text3); width: 56px; flex-shrink: 0; font-weight: 500; }
-  .slot-row.reserved .slot-time { color: var(--reserved); }
-  .slot-row.mine .slot-time { color: var(--success); }
-  .slot-info { flex: 1; font-size: 13px; color: var(--text2); }
-  .slot-row.reserved .slot-info { color: var(--reserved); font-weight: 600; }
-  .slot-row.mine .slot-info { color: var(--success); font-weight: 600; }
   .slot-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; flex-shrink: 0; }
   .badge-free { background: var(--surface2); color: var(--text3); }
   .badge-reserved { background: var(--reserved-bg); color: var(--reserved); border: 1px solid #f0d5a0; }
@@ -78,9 +94,6 @@
   .slot-btn.cancel-btn { border-color: #f0d5a0; color: var(--reserved); background: var(--reserved-bg); }
   .slot-btn.cancel-btn:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
   .slot-btn:disabled { opacity: 0.4; cursor: not-allowed; background: var(--surface2); }
-  .slot-row.class { background: #eef2ff; border-color: #c7d2fe; }
-  .slot-row.class .slot-time { color: #4338ca; }
-  .slot-row.class .slot-info { color: #4338ca; font-weight: 600; }
   .badge-class { background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe; }
   .slot-btn.class-btn { border-color: #c7d2fe; color: #4338ca; background: #eef2ff; cursor: not-allowed; }
 
@@ -110,11 +123,16 @@
   .alert-error { background: var(--danger-bg); color: var(--danger); border: 1px solid #f4bdb3; }
   .alert-success { background: var(--success-bg); color: var(--success); border: 1px solid #aad8be; }
 
+  .repeat-select { display: flex; gap: 6px; margin-bottom: 14px; }
+  .repeat-btn { flex: 1; padding: 8px 4px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text2); font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; transition: all 0.15s; text-align: center; }
+  .repeat-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+  .repeat-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .repeat-desc { font-size: 11px; color: var(--text3); background: var(--surface2); border-radius: var(--radius-sm); padding: 7px 10px; margin-bottom: 4px; line-height: 1.6; }
   .site-footer { text-align: center; padding: 1.5rem; font-size: 12px; color: var(--text3); border-top: 1px solid var(--border); margin-top: 2rem; }
 
   @media (max-width: 480px) {
     .site-header { padding: 0 1rem; }
-    .date-label { min-width: 100px; font-size: 12px; }
+    .date-label { min-width: 130px; font-size: 12px; }
     .slot-row { padding: 8px; gap: 7px; }
     .slot-time { width: 48px; font-size: 12px; }
   }
@@ -168,15 +186,7 @@ const FLOORS = {
 };
 const HOURS = Array.from({length: 14}, (_, i) => i + 8);
 
-const CLASS_HOURS = {
-  '프로젝트학습실': { 1:[10,11,14,15,16], 2:[9,10,14,15], 3:[9,11,12,16], 4:[11,14,16] },
-  '스마트교실1': { 1:[10,14,16], 2:[12,15], 3:[10,12,16], 4:[10,11,16], 5:[9,11,12] },
-  '모둠협업실': { 1:[10,11,16], 2:[10,11,14,15], 3:[10,11,16], 4:[10,14,15], 5:[9,12,15] },
-  '스마트교실2': { 1:[9,11,12,16], 2:[9,11,14,15], 3:[9,16], 4:[10,12,14,15], 5:[10,12,14,15] },
-  '과학실1': { 1:[16], 2:[10], 3:[10,11,16], 4:[10,14], 5:[9] },
-  '과학실2': { 1:[16], 3:[16] },
-  '기술가정실': { 1:[13,18], 2:[13,18], 3:[13,18], 4:[13,18], 5:[13,18] }
-};
+const CLASS_HOURS = {};
 
 function isClassHour(room, date, hour) {
   const day = date.getDay();
@@ -218,10 +228,22 @@ async function sbGetReservations(room, date) {
 async function sbInsert(room, date, hour, name, pwHash) {
   const url = `${SUPABASE_URL}/rest/v1/reservations`;
   const body = { id: `${room}__${fmtDate(date)}__${hour}`, room, date: fmtDate(date), hour, name, pw_hash: pwHash };
+  const headers = {
+    'apikey': SUPABASE_KEY,
+    'Authorization': `Bearer ${SUPABASE_KEY}`,
+    'Content-Type': 'application/json',
+    'Prefer': 'return=minimal'
+  };
   try {
-    const r = await fetch(url, { method: 'POST', headers: sbHeaders(), body: JSON.stringify(body) });
-    return r.ok || r.status === 201;
-  } catch { return false; }
+    const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+    if (!r.ok) {
+      const errText = await r.text();
+      console.error(`sbInsert 실패 [${r.status}]:`, errText);
+      // 중복(409)은 이미 체크 후 진입하므로 성공으로 처리
+      if (r.status === 409 || r.status === 422) return false;
+    }
+    return r.ok || r.status === 201 || r.status === 204;
+  } catch(e) { console.error('sbInsert 예외:', e); return false; }
 }
 
 async function sbDelete(room, date, hour) {
@@ -229,20 +251,122 @@ async function sbDelete(room, date, hour) {
   const url = `${SUPABASE_URL}/rest/v1/reservations?id=eq.${encodeURIComponent(id)}`;
   try {
     const r = await fetch(url, { method: 'DELETE', headers: sbHeaders() });
-    return r.ok;
-  } catch { return false; }
+    if (!r.ok) {
+      const errText = await r.text();
+      console.error(`sbDelete 실패 [${r.status}]:`, errText);
+    }
+    return r.ok || r.status === 204;
+  } catch(e) { console.error('sbDelete 예외:', e); return false; }
 }
 // =========================================================
 
+// 해당 주의 월요일 기준일 반환
+function getWeekMonday(d) {
+  const day = d.getDay(); // 0=일, 1=월 ...
+  const diff = day === 0 ? -6 : 1 - day;
+  const mon = new Date(d);
+  mon.setDate(d.getDate() + diff);
+  mon.setHours(0,0,0,0);
+  return mon;
+}
+
+// 주간 7일 배열 반환
+function getWeekDays(monday) {
+  return Array.from({length: 7}, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return d;
+  });
+}
+
 async function loadRoom(room) {
   renderLoading();
-  const rows = await sbGetReservations(room, state.date);
-  const data = {};
-  if (rows) rows.forEach(r => { data[r.id] = { name: r.name, pwHash: r.pw_hash }; });
-  state.reservations[room] = { data, loaded: true };
+  const monday = getWeekMonday(state.date);
+  const days = getWeekDays(monday);
+  const dataMap = {};
+  await Promise.all(days.map(async d => {
+    const rows = await sbGetReservations(room, d);
+    if (rows) rows.forEach(r => { dataMap[r.id] = { name: r.name, pwHash: r.pw_hash }; });
+  }));
+  state.reservations[room] = { data: dataMap, loaded: true };
   renderSchedule();
 }
 
+function changeWeek(delta) {
+  const d = new Date(state.date);
+  d.setDate(d.getDate() + delta * 7);
+  state.date = d;
+  if (state.room) loadRoom(state.room);
+}
+
+function renderSchedule() {
+  const area = document.getElementById('scheduleArea');
+  if (!state.room) { area.innerHTML = ''; return; }
+  const rsvData = state.reservations[state.room]?.data || {};
+
+  const monday = getWeekMonday(state.date);
+  const days = getWeekDays(monday);
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  // 헤더 날짜 범위 표시
+  const startLabel = `${monday.getMonth()+1}/${monday.getDate()}`;
+  const end = days[6];
+  const endLabel = `${end.getMonth()+1}/${end.getDate()}`;
+
+  // 헤더 행
+  let thCols = `<th class="time-col">시간</th>`;
+  days.forEach(d => {
+    const isToday = d.getTime() === today.getTime();
+    thCols += `<th class="${isToday ? 'today-col' : ''}">${d.getMonth()+1}/${d.getDate()}<br><span style="font-weight:400;color:${isToday ? 'var(--accent)' : 'var(--text3)'}">${DAY_KO[d.getDay()]}</span></th>`;
+  });
+
+  // 바디 행
+  let tbody = '';
+  HOURS.forEach(h => {
+    let row = `<td class="time-cell">${String(h).padStart(2,'0')}:00</td>`;
+    days.forEach(d => {
+      const key = `${state.room}__${fmtDate(d)}__${h}`;
+      const rsv = rsvData[key];
+      const isClass = isClassHour(state.room, d, h);
+      const isMeal = isClass && state.room === '기술가정실';
+      const isToday = d.getTime() === today.getTime();
+      let cellClass = 'week-cell';
+      let inner = '';
+      if (isClass) {
+        cellClass += ' is-class';
+        inner = `<div class="week-cell-dot dot-class"></div><div class="week-cell-label">${isMeal ? '식사' : '수업'}</div>`;
+      } else if (rsv) {
+        cellClass += ' reserved';
+        inner = `<div class="week-cell-name">${rsv.name}</div><div class="week-cell-label" style="font-size:9px;color:var(--reserved);opacity:0.7">예약됨</div>`;
+      } else {
+        cellClass += ' free' + (isToday ? ' today-col' : '');
+        inner = `<div class="week-cell-dot dot-free"></div>`;
+      }
+      const clickAttr = (!isClass && !rsv)
+        ? `onclick="openReserveModal(${h}, new Date('${fmtDate(d)}'))"`
+        : (rsv ? `onclick="openCancelModal(${h}, new Date('${fmtDate(d)}'))"` : '');
+      row += `<td><div class="${cellClass}" ${clickAttr}>${inner}</div></td>`;
+    });
+    tbody += `<tr>${row}</tr>`;
+  });
+
+  area.innerHTML = `<div class="schedule-card">
+    <div class="schedule-top">
+      <div class="schedule-room-name">${state.room}</div>
+      <div class="date-nav">
+        <button class="date-btn" onclick="changeWeek(-1)">‹</button>
+        <div class="date-label">${startLabel} ~ ${endLabel}</div>
+        <button class="date-btn" onclick="changeWeek(1)">›</button>
+      </div>
+    </div>
+    <div class="week-table-wrap">
+      <table class="week-table">
+        <thead><tr>${thCols}</tr></thead>
+        <tbody>${tbody}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
 function selectFloor(f) {
   state.floor = f; state.room = null;
   document.querySelectorAll('.floor-tab').forEach((b,i) => b.classList.toggle('active', [1,2,3,4][i] === f));
@@ -272,47 +396,6 @@ function renderLoading() {
     `<div class="schedule-card"><div class="loading-bar"></div><div class="state-box"><p>예약 현황을 불러오는 중...</p></div></div>`;
 }
 
-function renderSchedule() {
-  const area = document.getElementById('scheduleArea');
-  if (!state.room) { area.innerHTML = ''; return; }
-  const rsvData = state.reservations[state.room]?.data || {};
-  let slotsHtml = '';
-  HOURS.forEach(h => {
-    const key = `${state.room}__${fmtDate(state.date)}__${h}`;
-    const rsv = rsvData[key];
-    const isClass = isClassHour(state.room, state.date, h);
-    const isMeal = isClass && state.room === '기술가정실';
-    const cls = isClass ? 'class' : (rsv ? 'reserved' : '');
-    const badge = isClass
-      ? `<span class="slot-badge badge-class">${isMeal ? '식사시간' : '수업'}</span>`
-      : (rsv ? '<span class="slot-badge badge-reserved">예약됨</span>' : '<span class="slot-badge badge-free">가능</span>');
-    const info = isClass ? (isMeal ? '식사 시간' : '수업 시간') : (rsv ? rsv.name : '예약 가능');
-    let btnHtml = '';
-    if (isClass) btnHtml = `<button class="slot-btn class-btn" disabled>${isMeal ? '식사시간' : '수업'}</button>`;
-    else if (rsv) btnHtml = `<button class="slot-btn cancel-btn" onclick="openCancelModal(${h})">취소</button>`;
-    else btnHtml = `<button class="slot-btn" onclick="openReserveModal(${h})">예약</button>`;
-    slotsHtml += `<div class="slot-row ${cls}"><span class="slot-time">${String(h).padStart(2,'0')}:00</span>${badge}<span class="slot-info">${info}</span>${btnHtml}</div>`;
-  });
-  area.innerHTML = `<div class="schedule-card">
-    <div class="schedule-top">
-      <div class="schedule-room-name">${state.room}</div>
-      <div class="date-nav">
-        <button class="date-btn" onclick="changeDate(-1)">‹</button>
-        <div class="date-label">${fmtDisplay(state.date)}</div>
-        <button class="date-btn" onclick="changeDate(1)">›</button>
-      </div>
-    </div>
-    <div class="slots-wrap">${slotsHtml}</div>
-  </div>`;
-}
-
-function changeDate(delta) {
-  const d = new Date(state.date);
-  d.setDate(d.getDate() + delta);
-  state.date = d;
-  if (state.room) loadRoom(state.room);
-}
-
 function openModal(type, ctx={}) { state.modalType=type; state.modalCtx=ctx; renderModal(); document.getElementById('modalBackdrop').style.display='flex'; }
 function closeModal() { document.getElementById('modalBackdrop').style.display='none'; }
 function handleBackdropClick(e) { if(e.target===document.getElementById('modalBackdrop')) closeModal(); }
@@ -324,73 +407,131 @@ function renderModal(msg='', isSuccess=false) {
 
   if (type === 'reserve') {
     const h = ctx.hour;
+    const d = ctx.date;
+    const dayName = DAY_KO[d.getDay()];
+    const repeatType = ctx.repeatType || 'once';
+    const descMap = {
+      once:    `${fmtDisplay(d)} 하루만 예약합니다.`,
+      month:   `${fmtDisplay(d)}부터 <b>매주 ${dayName}요일</b> ${String(h).padStart(2,'0')}:00을 <b>4주(1개월)</b> 동안 예약합니다.`,
+      semester:`${fmtDisplay(d)}부터 <b>매주 ${dayName}요일</b> ${String(h).padStart(2,'0')}:00을 <b>24주(6개월)</b> 동안 예약합니다.`
+    };
     box.innerHTML = `
       <div class="modal-title">${state.room} 예약</div>
-      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">${fmtDisplay(state.date)} ${String(h).padStart(2,'0')}:00 ~ ${String(h+1).padStart(2,'0')}:00</p>
-      <div class="field"><label>이름</label><input id="ri_name" type="text" placeholder="홍길동"></div>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:12px">${fmtDisplay(d)} (${dayName}) ${String(h).padStart(2,'0')}:00 ~ ${String(h+1).padStart(2,'0')}:00</p>
+      <div style="font-size:11px;font-weight:700;color:var(--text2);letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px">예약 유형</div>
+      <div class="repeat-select">
+        <button class="repeat-btn ${repeatType==='once'?'active':''}" onclick="setRepeatType('once')">1회</button>
+        <button class="repeat-btn ${repeatType==='month'?'active':''}" onclick="setRepeatType('month')">1개월</button>
+        <button class="repeat-btn ${repeatType==='semester'?'active':''}" onclick="setRepeatType('semester')">6개월(1학기)</button>
+      </div>
+      <div class="repeat-desc">${descMap[repeatType]}</div>
+      <div class="field"><label>이름</label><input id="ri_name" type="text" placeholder="홍길동" value="${ctx.savedName||''}"></div>
       <div class="field"><label>비밀번호</label><input id="ri_pw" type="password" placeholder="취소 시 사용할 비밀번호"><div class="field-hint">예약 취소 시 이 비밀번호가 필요합니다.</div></div>
       ${alertHtml}
       <div class="modal-btns">
-        <button class="btn-primary" id="reserveBtn" onclick="doReserve(${h})">예약 확인</button>
+        <button class="btn-primary" id="reserveBtn" onclick="doReserve(${h}, '${fmtDate(d)}')">예약 확인</button>
         <button class="btn-secondary" onclick="closeModal()">닫기</button>
       </div>`;
-    setTimeout(() => document.getElementById('ri_name')?.focus(), 50);
+    setTimeout(() => { if (!ctx.savedName) document.getElementById('ri_name')?.focus(); }, 50);
 
   } else if (type === 'cancel') {
     const h = ctx.hour;
-    const key = `${state.room}__${fmtDate(state.date)}__${h}`;
+    const d = ctx.date;
+    const key = `${state.room}__${fmtDate(d)}__${h}`;
     const rsv = (state.reservations[state.room]?.data || {})[key];
     box.innerHTML = `
       <div class="modal-title">예약 취소</div>
-      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">${state.room} · ${fmtDisplay(state.date)} ${String(h).padStart(2,'0')}:00</p>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">${state.room} · ${fmtDisplay(d)} ${String(h).padStart(2,'0')}:00</p>
       ${rsv ? `<p style="font-size:13px;font-weight:600;margin-bottom:1rem">예약자: ${rsv.name}</p>` : ''}
       <div class="field"><label>비밀번호 확인</label><input id="ci_pw" type="password" placeholder="예약 시 입력한 비밀번호"></div>
       ${alertHtml}
       <div class="modal-btns">
-        <button class="btn-primary btn-danger" id="cancelBtn" onclick="doCancel(${h})">취소 확인</button>
+        <button class="btn-primary btn-danger" id="cancelBtn" onclick="doCancel(${h}, '${fmtDate(d)}')">취소 확인</button>
         <button class="btn-secondary" onclick="closeModal()">닫기</button>
       </div>`;
     setTimeout(() => document.getElementById('ci_pw')?.focus(), 50);
   }
 }
 
-function openReserveModal(h) { openModal('reserve', { hour: h }); }
-function openCancelModal(h) { openModal('cancel', { hour: h }); }
+function openReserveModal(h, date) { openModal('reserve', { hour: h, date: date instanceof Date ? date : new Date(date), repeatType: 'once' }); }
+function openCancelModal(h, date) { openModal('cancel', { hour: h, date: date instanceof Date ? date : new Date(date) }); }
 
-async function doReserve(h) {
+function setRepeatType(type) {
+  const name = document.getElementById('ri_name')?.value || '';
+  state.modalCtx.repeatType = type;
+  state.modalCtx.savedName = name;
+  renderModal();
+}
+
+// 반복 예약할 날짜 목록 생성
+function getRepeatDates(startDate, repeatType) {
+  const dates = [];
+  const weeks = repeatType === 'month' ? 4 : repeatType === 'semester' ? 24 : 1;
+  for (let i = 0; i < weeks; i++) {
+    const d = new Date(startDate);
+    d.setDate(startDate.getDate() + i * 7);
+    dates.push(d);
+  }
+  return dates;
+}
+
+async function doReserve(h, dateStr) {
+  const startDate = new Date(dateStr);
   const name = document.getElementById('ri_name').value.trim();
   const pw = document.getElementById('ri_pw').value;
   if (!name) { renderModal('이름을 입력해주세요.'); return; }
   if (!pw) { renderModal('비밀번호를 입력해주세요.'); return; }
   const btn = document.getElementById('reserveBtn');
-  btn.disabled = true; btn.textContent = '저장 중...';
-  const key = `${state.room}__${fmtDate(state.date)}__${h}`;
-  if ((state.reservations[state.room]?.data || {})[key]) {
-    renderModal('이미 예약된 시간입니다.'); btn.disabled=false; btn.textContent='예약 확인'; return;
-  }
+  btn.disabled = true;
+
+  const repeatType = state.modalCtx.repeatType || 'once';
+  const dates = getRepeatDates(startDate, repeatType);
   const pwHash = btoa(unescape(encodeURIComponent(pw)));
-  const ok = await sbInsert(state.room, state.date, h, name, pwHash);
-  if (ok) {
-    await loadRoom(state.room);
-    renderModal('예약이 완료되었습니다! 🎉', true);
-    setTimeout(() => { closeModal(); renderSchedule(); }, 1300);
-  } else {
-    renderModal('저장에 실패했습니다. 다시 시도해주세요.');
-    btn.disabled=false; btn.textContent='예약 확인';
+  const rsvData = state.reservations[state.room]?.data || {};
+
+  // 충돌 체크
+  const conflicts = dates.filter(d => rsvData[`${state.room}__${fmtDate(d)}__${h}`]);
+  if (conflicts.length > 0) {
+    const conflictDates = conflicts.map(d => fmtDisplay(d)).join(', ');
+    renderModal(`이미 예약된 날짜가 있습니다: ${conflictDates}`);
+    btn.disabled = false; return;
   }
+
+  btn.textContent = `저장 중... (0/${dates.length})`;
+  let successCount = 0;
+  let lastErr = '';
+  for (let i = 0; i < dates.length; i++) {
+    btn.textContent = `저장 중... (${i+1}/${dates.length})`;
+    const ok = await sbInsert(state.room, dates[i], h, name, pwHash);
+    if (ok) successCount++;
+    else lastErr = fmtDisplay(dates[i]);
+  }
+
+  await loadRoom(state.room);
+  if (successCount === dates.length) {
+    const label = repeatType === 'once' ? '예약' : `${dates.length}주 반복 예약`;
+    renderModal(`${label}이 완료되었습니다! 🎉`, true);
+  } else if (successCount === 0) {
+    renderModal(`저장에 실패했습니다. 브라우저 콘솔(F12)에서 오류를 확인해주세요.`);
+    btn.disabled = false; btn.textContent = '예약 확인'; return;
+  } else {
+    renderModal(`${successCount}/${dates.length}건 저장됐습니다. 실패: ${lastErr}`, true);
+  }
+  setTimeout(() => { closeModal(); renderSchedule(); }, 1800);
 }
 
-async function doCancel(h) {
+async function doCancel(h, dateStr) {
+  const d = new Date(dateStr);
   const pw = document.getElementById('ci_pw').value;
   if (!pw) { renderModal('비밀번호를 입력하세요.'); return; }
-  const key = `${state.room}__${fmtDate(state.date)}__${h}`;
+  const key = `${state.room}__${fmtDate(d)}__${h}`;
   const rsv = (state.reservations[state.room]?.data || {})[key];
   if (!rsv) { renderModal('예약 정보를 찾을 수 없습니다.'); return; }
   const pwHash = btoa(unescape(encodeURIComponent(pw)));
   if (pwHash !== rsv.pwHash) { renderModal('비밀번호가 일치하지 않습니다.'); return; }
   const btn = document.getElementById('cancelBtn');
   btn.disabled = true; btn.textContent = '처리 중...';
-  const ok = await sbDelete(state.room, state.date, h);
+  const ok = await sbDelete(state.room, d, h);
   if (ok) {
     await loadRoom(state.room);
     renderModal('예약이 취소되었습니다.', true);
