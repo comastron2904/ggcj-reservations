@@ -225,9 +225,9 @@ async function sbGetReservations(room, date) {
   } catch { return null; }
 }
 
-async function sbInsert(room, date, hour, name, pwHash) {
+async function sbInsert(room, date, hour, name, pwHash, reason) {
   const url = `${SUPABASE_URL}/rest/v1/reservations`;
-  const body = { id: `${room}__${fmtDate(date)}__${hour}`, room, date: fmtDate(date), hour, name, pw_hash: pwHash };
+  const body = { id: `${room}__${fmtDate(date)}__${hour}`, room, date: fmtDate(date), hour, name, pw_hash: pwHash, reason: reason || '' };
   const headers = {
     'apikey': SUPABASE_KEY,
     'Authorization': `Bearer ${SUPABASE_KEY}`,
@@ -286,7 +286,7 @@ async function loadRoom(room) {
   const dataMap = {};
   await Promise.all(days.map(async d => {
     const rows = await sbGetReservations(room, d);
-    if (rows) rows.forEach(r => { dataMap[r.id] = { name: r.name, pwHash: r.pw_hash }; });
+    if (rows) rows.forEach(r => { dataMap[r.id] = { name: r.name, pwHash: r.pw_hash, reason: r.reason || '' }; });
   }));
   state.reservations[room] = { data: dataMap, loaded: true };
   renderSchedule();
@@ -337,7 +337,7 @@ function renderSchedule() {
         inner = `<div class="week-cell-dot dot-class"></div><div class="week-cell-label">${isMeal ? '식사' : '수업'}</div>`;
       } else if (rsv) {
         cellClass += ' reserved';
-        inner = `<div class="week-cell-name">${rsv.name}</div><div class="week-cell-label" style="font-size:9px;color:var(--reserved);opacity:0.7">예약됨</div>`;
+        inner = `<div class="week-cell-name">${rsv.name}</div>${rsv.reason ? `<div class="week-cell-label" style="font-size:9px;color:var(--reserved);opacity:0.85;max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${rsv.reason}</div>` : `<div class="week-cell-label" style="font-size:9px;color:var(--reserved);opacity:0.7">예약됨</div>`}`;
       } else {
         cellClass += ' free' + (isToday ? ' today-col' : '');
         inner = `<div class="week-cell-dot dot-free"></div>`;
@@ -413,7 +413,7 @@ function renderModal(msg='', isSuccess=false) {
     const descMap = {
       once:    `${fmtDisplay(d)} 하루만 예약합니다.`,
       month:   `${fmtDisplay(d)}부터 <b>매주 ${dayName}요일</b> ${String(h).padStart(2,'0')}:00을 <b>4주(1개월)</b> 동안 예약합니다.`,
-      semester:`${fmtDisplay(d)}부터 <b>매주 ${dayName}요일</b> ${String(h).padStart(2,'0')}:00을 <b>24주(6개월)</b> 동안 예약합니다.`
+      semester:`${fmtDisplay(d)}부터 <b>매주 ${dayName}요일</b> ${String(h).padStart(2,'0')}:00을 <b>16주(4개월)</b> 동안 예약합니다.`
     };
     box.innerHTML = `
       <div class="modal-title">${state.room} 예약</div>
@@ -422,10 +422,11 @@ function renderModal(msg='', isSuccess=false) {
       <div class="repeat-select">
         <button class="repeat-btn ${repeatType==='once'?'active':''}" onclick="setRepeatType('once')">1회</button>
         <button class="repeat-btn ${repeatType==='month'?'active':''}" onclick="setRepeatType('month')">1개월</button>
-        <button class="repeat-btn ${repeatType==='semester'?'active':''}" onclick="setRepeatType('semester')">6개월(1학기)</button>
+        <button class="repeat-btn ${repeatType==='semester'?'active':''}" onclick="setRepeatType('semester')">4개월(한학기)</button>
       </div>
       <div class="repeat-desc">${descMap[repeatType]}</div>
       <div class="field"><label>이름</label><input id="ri_name" type="text" placeholder="홍길동" value="${ctx.savedName||''}"></div>
+      <div class="field"><label>예약 사유</label><input id="ri_reason" type="text" placeholder="예: 동아리 활동, 보충수업 등" value="${ctx.savedReason||''}"><div class="field-hint">다른 사람이 예약 현황에서 사유를 확인할 수 있습니다.</div></div>
       <div class="field"><label>비밀번호</label><input id="ri_pw" type="password" placeholder="취소 시 사용할 비밀번호"><div class="field-hint">예약 취소 시 이 비밀번호가 필요합니다.</div></div>
       ${alertHtml}
       <div class="modal-btns">
@@ -442,7 +443,7 @@ function renderModal(msg='', isSuccess=false) {
     box.innerHTML = `
       <div class="modal-title">예약 취소</div>
       <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">${state.room} · ${fmtDisplay(d)} ${String(h).padStart(2,'0')}:00</p>
-      ${rsv ? `<p style="font-size:13px;font-weight:600;margin-bottom:1rem">예약자: ${rsv.name}</p>` : ''}
+      ${rsv ? `<p style="font-size:13px;font-weight:600;margin-bottom:4px">예약자: ${rsv.name}</p>${rsv.reason ? `<p style="font-size:12px;color:var(--text2);margin-bottom:1rem">사유: ${rsv.reason}</p>` : '<p style="margin-bottom:1rem"></p>'}` : ''}
       <div class="field"><label>비밀번호 확인</label><input id="ci_pw" type="password" placeholder="예약 시 입력한 비밀번호"></div>
       ${alertHtml}
       <div class="modal-btns">
@@ -458,15 +459,17 @@ function openCancelModal(h, date) { openModal('cancel', { hour: h, date: date in
 
 function setRepeatType(type) {
   const name = document.getElementById('ri_name')?.value || '';
+  const reason = document.getElementById('ri_reason')?.value || '';
   state.modalCtx.repeatType = type;
   state.modalCtx.savedName = name;
+  state.modalCtx.savedReason = reason;
   renderModal();
 }
 
 // 반복 예약할 날짜 목록 생성
 function getRepeatDates(startDate, repeatType) {
   const dates = [];
-  const weeks = repeatType === 'month' ? 4 : repeatType === 'semester' ? 24 : 1;
+  const weeks = repeatType === 'month' ? 4 : repeatType === 'semester' ? 16 : 1;
   for (let i = 0; i < weeks; i++) {
     const d = new Date(startDate);
     d.setDate(startDate.getDate() + i * 7);
@@ -478,8 +481,10 @@ function getRepeatDates(startDate, repeatType) {
 async function doReserve(h, dateStr) {
   const startDate = new Date(dateStr);
   const name = document.getElementById('ri_name').value.trim();
+  const reason = document.getElementById('ri_reason').value.trim();
   const pw = document.getElementById('ri_pw').value;
   if (!name) { renderModal('이름을 입력해주세요.'); return; }
+  if (!reason) { renderModal('예약 사유를 입력해주세요.'); return; }
   if (!pw) { renderModal('비밀번호를 입력해주세요.'); return; }
   const btn = document.getElementById('reserveBtn');
   btn.disabled = true;
@@ -502,7 +507,7 @@ async function doReserve(h, dateStr) {
   let lastErr = '';
   for (let i = 0; i < dates.length; i++) {
     btn.textContent = `저장 중... (${i+1}/${dates.length})`;
-    const ok = await sbInsert(state.room, dates[i], h, name, pwHash);
+    const ok = await sbInsert(state.room, dates[i], h, name, pwHash, reason);
     if (ok) successCount++;
     else lastErr = fmtDisplay(dates[i]);
   }
