@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GGCJ 특별실 예약</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f5f4f0;
+    --surface: #ffffff;
+    --surface2: #f0efe9;
+    --border: #e2e0d8;
+    --border2: #cccac0;
+    --text: #1a1a18;
+    --text2: #6b6a64;
+    --text3: #9e9d97;
+    --accent: #e24329;
+    --accent-dark: #b53a2a;
+    --accent-bg: #fdf0ee;
+    --accent-text: #8a2a1c;
+    --success: #2a7a4b;
+    --success-bg: #eaf5ee;
+    --danger: #b53a2a;
+    --danger-bg: #fdf0ee;
+    --reserved: #c47c10;
+    --reserved-bg: #fdf4e7;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Noto Sans KR', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; line-height: 1.6; }
+
+  .site-header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 1.5rem; display: flex; align-items: center; justify-content: space-between; height: 56px; position: sticky; top: 0; z-index: 50; box-shadow: var(--shadow); }
+  .site-title { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; display: flex; align-items: center; gap: 8px; }
+  .site-title span { color: var(--accent); }
+
+  .container { max-width: 780px; margin: 0 auto; padding: 1.5rem 1rem; }
+
+  .floor-tabs { display: flex; background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); padding: 4px; gap: 4px; margin-bottom: 1rem; box-shadow: var(--shadow); }
+  .floor-tab { flex: 1; padding: 9px; border: none; border-radius: var(--radius-sm); background: transparent; color: var(--text2); font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer; transition: all 0.15s; }
+  .floor-tab:hover { background: var(--surface2); color: var(--text); }
+  .floor-tab.active { background: var(--accent); color: #fff; box-shadow: 0 2px 8px rgba(226,67,41,0.3); }
+
+  .room-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1.25rem; }
+  .room-chip { padding: 7px 16px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); color: var(--text2); font-size: 13px; font-weight: 500; font-family: inherit; cursor: pointer; transition: all 0.15s; box-shadow: var(--shadow); }
+  .room-chip:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+  .room-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .schedule-card { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); overflow: hidden; }
+  .schedule-top { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--surface2); flex-wrap: wrap; gap: 8px; }
+  .schedule-room-name { font-size: 15px; font-weight: 700; }
+  .date-nav { display: flex; align-items: center; gap: 6px; }
+  .date-btn { width: 30px; height: 30px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text2); font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; font-family: inherit; }
+  .date-btn:hover { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+  .date-label { font-size: 13px; font-weight: 600; color: var(--text); min-width: 130px; text-align: center; font-family: 'DM Mono', monospace; }
+
+  .slots-wrap { padding: 8px; }
+  .slot-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: var(--radius-sm); margin-bottom: 3px; transition: background 0.12s; border: 1px solid transparent; }
+  .slot-row:hover { background: var(--surface2); }
+  .slot-row.reserved { background: var(--reserved-bg); border-color: #f0d5a0; }
+  .slot-row.mine { background: var(--success-bg); border-color: #aad8be; }
+  .slot-time { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--text3); width: 56px; flex-shrink: 0; font-weight: 500; }
+  .slot-row.reserved .slot-time { color: var(--reserved); }
+  .slot-row.mine .slot-time { color: var(--success); }
+  .slot-info { flex: 1; font-size: 13px; color: var(--text2); }
+  .slot-row.reserved .slot-info { color: var(--reserved); font-weight: 600; }
+  .slot-row.mine .slot-info { color: var(--success); font-weight: 600; }
+  .slot-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; flex-shrink: 0; }
+  .badge-free { background: var(--surface2); color: var(--text3); }
+  .badge-reserved { background: var(--reserved-bg); color: var(--reserved); border: 1px solid #f0d5a0; }
+  .badge-mine { background: var(--success-bg); color: var(--success); border: 1px solid #aad8be; }
+  .slot-btn { padding: 5px 14px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; transition: all 0.15s; border: 1px solid var(--border); background: var(--surface); color: var(--text2); }
+  .slot-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .slot-btn.cancel-btn { border-color: #f0d5a0; color: var(--reserved); background: var(--reserved-bg); }
+  .slot-btn.cancel-btn:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+  .slot-btn:disabled { opacity: 0.4; cursor: not-allowed; background: var(--surface2); }
+  .slot-row.class { background: #eef2ff; border-color: #c7d2fe; }
+  .slot-row.class .slot-time { color: #4338ca; }
+  .slot-row.class .slot-info { color: #4338ca; font-weight: 600; }
+  .badge-class { background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe; }
+  .slot-btn.class-btn { border-color: #c7d2fe; color: #4338ca; background: #eef2ff; cursor: not-allowed; }
+
+  .state-box { text-align: center; padding: 3rem 1rem; color: var(--text3); }
+  .loading-bar { height: 3px; background: linear-gradient(90deg, var(--accent-bg), var(--accent), var(--accent-bg)); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(15,15,12,0.5); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 1rem; backdrop-filter: blur(2px); }
+  .modal-box { background: var(--surface); border-radius: 14px; padding: 1.75rem; width: 100%; max-width: 380px; box-shadow: var(--shadow-md); border: 1px solid var(--border); animation: modalIn 0.18s ease; max-height: 90vh; overflow-y: auto; }
+  @keyframes modalIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+  .modal-title { font-size: 16px; font-weight: 700; margin-bottom: 1.25rem; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 11px; font-weight: 700; color: var(--text2); margin-bottom: 5px; letter-spacing: 0.5px; text-transform: uppercase; }
+  .field input { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 14px; font-family: inherit; background: var(--surface); color: var(--text); transition: border-color 0.15s; }
+  .field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(226,67,41,0.1); }
+  .field input[readonly] { background: var(--surface2); }
+  .field-hint { font-size: 11px; color: var(--text3); margin-top: 4px; line-height: 1.6; }
+  .modal-btns { display: flex; gap: 8px; margin-top: 1.25rem; }
+  .btn-primary { flex: 1; padding: 10px; background: var(--accent); color: #fff; border: none; border-radius: var(--radius-sm); font-size: 14px; font-weight: 700; font-family: inherit; cursor: pointer; transition: all 0.15s; }
+  .btn-primary:hover { background: var(--accent-dark); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-secondary { flex: 1; padding: 10px; background: var(--surface2); color: var(--text2); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer; }
+  .btn-secondary:hover { background: var(--border); }
+  .btn-danger { background: var(--danger) !important; }
+  .btn-danger:hover { background: #8a2a1c !important; }
+  .alert { padding: 10px 12px; border-radius: var(--radius-sm); font-size: 13px; margin-top: 12px; font-weight: 500; }
+  .alert-error { background: var(--danger-bg); color: var(--danger); border: 1px solid #f4bdb3; }
+  .alert-success { background: var(--success-bg); color: var(--success); border: 1px solid #aad8be; }
+
+  .site-footer { text-align: center; padding: 1.5rem; font-size: 12px; color: var(--text3); border-top: 1px solid var(--border); margin-top: 2rem; }
+
+  @media (max-width: 480px) {
+    .site-header { padding: 0 1rem; }
+    .date-label { min-width: 100px; font-size: 12px; }
+    .slot-row { padding: 8px; gap: 7px; }
+    .slot-time { width: 48px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-title">
+    <svg width="20" height="20" viewBox="0 0 380 380" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M189.8 358.2L258.3 149.9H121.3L189.8 358.2Z" fill="#e24329"/>
+      <path d="M189.8 358.2L121.3 149.9H28.6L189.8 358.2Z" fill="#fc6d26"/>
+      <path d="M28.6 149.9L7.3 214.7C5.5 220.2 7.5 226.2 12.2 229.5L189.8 358.2L28.6 149.9Z" fill="#fca326"/>
+      <path d="M28.6 149.9H121.3L81.4 28.6C79.4 22.6 71 22.6 69 28.6L28.6 149.9Z" fill="#e24329"/>
+      <path d="M189.8 358.2L258.3 149.9H351L189.8 358.2Z" fill="#fc6d26"/>
+      <path d="M351 149.9L372.3 214.7C374.1 220.2 372.1 226.2 367.4 229.5L189.8 358.2L351 149.9Z" fill="#fca326"/>
+      <path d="M351 149.9H258.3L298.2 28.6C300.2 22.6 308.6 22.6 310.6 28.6L351 149.9Z" fill="#e24329"/>
+    </svg>
+    GGCJ <span>특별실 예약</span>
+  </div>
+</header>
+
+<div class="container">
+  <div class="floor-tabs">
+    <button class="floor-tab" onclick="selectFloor(1)">1층</button>
+    <button class="floor-tab" onclick="selectFloor(2)">2층</button>
+    <button class="floor-tab" onclick="selectFloor(3)">3층</button>
+    <button class="floor-tab" onclick="selectFloor(4)">4층</button>
+  </div>
+  <div class="room-list" id="roomList"></div>
+  <div id="scheduleArea"></div>
+</div>
+
+<footer class="site-footer">GGCJ 특별실 예약 시스템 · 데이터: Supabase</footer>
+
+<div class="modal-backdrop" id="modalBackdrop" style="display:none" onclick="handleBackdropClick(event)">
+  <div class="modal-box" id="modalBox"></div>
+</div>
+
+<script>
+// ===================== Supabase 설정 =====================
+const SUPABASE_URL = 'https://jyegjrotxfctywheumdy.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp5ZWdqcm90eGZjdHl3aGV1bWR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxODU4MDgsImV4cCI6MjA5MDc2MTgwOH0.cIbX8FEr9TopyRjg7nZURGmb1t8ZanSSz6wXXKCfFE0';
+// =========================================================
+
+const FLOORS = {
+  1: ['도서관'],
+  2: ['스마트교실1'],
+  3: ['스마트교실2', '프로젝트학습실', '모둠협업실', '과학실1', '과학실2'],
+  4: ['기술가정실']
+};
+const HOURS = Array.from({length: 14}, (_, i) => i + 8);
+
+const CLASS_HOURS = {
+  '프로젝트학습실': { 1:[10,11,14,15,16], 2:[9,10,14,15], 3:[9,11,12,16], 4:[11,14,16] },
+  '스마트교실1': { 1:[10,14,16], 2:[12,15], 3:[10,12,16], 4:[10,11,16], 5:[9,11,12] },
+  '모둠협업실': { 1:[10,11,16], 2:[10,11,14,15], 3:[10,11,16], 4:[10,14,15], 5:[9,12,15] },
+  '스마트교실2': { 1:[9,11,12,16], 2:[9,11,14,15], 3:[9,16], 4:[10,12,14,15], 5:[10,12,14,15] },
+  '과학실1': { 1:[16], 2:[10], 3:[10,11,16], 4:[10,14], 5:[9] },
+  '과학실2': { 1:[16], 3:[16] },
+  '기술가정실': { 1:[13,18], 2:[13,18], 3:[13,18], 4:[13,18], 5:[13,18] }
+};
+
+function isClassHour(room, date, hour) {
+  const day = date.getDay();
+  return !!(CLASS_HOURS[room]?.[day]?.includes(hour));
+}
+
+const DAY_KO = ['일','월','화','수','목','금','토'];
+
+let state = {
+  floor: null, room: null,
+  date: new Date(),
+  reservations: {},
+  modalType: null, modalCtx: {}
+};
+
+function fmtDate(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function fmtDisplay(d) { return `${d.getMonth()+1}월 ${d.getDate()}일 (${DAY_KO[d.getDay()]})`; }
+
+// ===================== Supabase API =====================
+function sbHeaders() {
+  return {
+    'apikey': SUPABASE_KEY,
+    'Authorization': `Bearer ${SUPABASE_KEY}`,
+    'Content-Type': 'application/json',
+    'Prefer': 'return=minimal'
+  };
+}
+
+async function sbGetReservations(room, date) {
+  const dateStr = fmtDate(date);
+  const url = `${SUPABASE_URL}/rest/v1/reservations?room=eq.${encodeURIComponent(room)}&date=eq.${dateStr}&select=*`;
+  try {
+    const r = await fetch(url, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+
+async function sbInsert(room, date, hour, name, pwHash) {
+  const url = `${SUPABASE_URL}/rest/v1/reservations`;
+  const body = { id: `${room}__${fmtDate(date)}__${hour}`, room, date: fmtDate(date), hour, name, pw_hash: pwHash };
+  try {
+    const r = await fetch(url, { method: 'POST', headers: sbHeaders(), body: JSON.stringify(body) });
+    return r.ok || r.status === 201;
+  } catch { return false; }
+}
+
+async function sbDelete(room, date, hour) {
+  const id = `${room}__${fmtDate(date)}__${hour}`;
+  const url = `${SUPABASE_URL}/rest/v1/reservations?id=eq.${encodeURIComponent(id)}`;
+  try {
+    const r = await fetch(url, { method: 'DELETE', headers: sbHeaders() });
+    return r.ok;
+  } catch { return false; }
+}
+// =========================================================
+
+async function loadRoom(room) {
+  renderLoading();
+  const rows = await sbGetReservations(room, state.date);
+  const data = {};
+  if (rows) rows.forEach(r => { data[r.id] = { name: r.name, pwHash: r.pw_hash }; });
+  state.reservations[room] = { data, loaded: true };
+  renderSchedule();
+}
+
+function selectFloor(f) {
+  state.floor = f; state.room = null;
+  document.querySelectorAll('.floor-tab').forEach((b,i) => b.classList.toggle('active', [1,2,3,4][i] === f));
+  renderRooms();
+  document.getElementById('scheduleArea').innerHTML = '';
+}
+
+function selectRoom(r) {
+  state.room = r;
+  document.querySelectorAll('.room-chip').forEach(b => b.classList.toggle('active', b.dataset.room === r));
+  loadRoom(r);
+}
+
+function renderRooms() {
+  const list = document.getElementById('roomList');
+  list.innerHTML = '';
+  (FLOORS[state.floor] || []).forEach(r => {
+    const btn = document.createElement('button');
+    btn.className = 'room-chip'; btn.dataset.room = r; btn.textContent = r;
+    btn.onclick = () => selectRoom(r);
+    list.appendChild(btn);
+  });
+}
+
+function renderLoading() {
+  document.getElementById('scheduleArea').innerHTML =
+    `<div class="schedule-card"><div class="loading-bar"></div><div class="state-box"><p>예약 현황을 불러오는 중...</p></div></div>`;
+}
+
+function renderSchedule() {
+  const area = document.getElementById('scheduleArea');
+  if (!state.room) { area.innerHTML = ''; return; }
+  const rsvData = state.reservations[state.room]?.data || {};
+  let slotsHtml = '';
+  HOURS.forEach(h => {
+    const key = `${state.room}__${fmtDate(state.date)}__${h}`;
+    const rsv = rsvData[key];
+    const isClass = isClassHour(state.room, state.date, h);
+    const isMeal = isClass && state.room === '기술가정실';
+    const cls = isClass ? 'class' : (rsv ? 'reserved' : '');
+    const badge = isClass
+      ? `<span class="slot-badge badge-class">${isMeal ? '식사시간' : '수업'}</span>`
+      : (rsv ? '<span class="slot-badge badge-reserved">예약됨</span>' : '<span class="slot-badge badge-free">가능</span>');
+    const info = isClass ? (isMeal ? '식사 시간' : '수업 시간') : (rsv ? rsv.name : '예약 가능');
+    let btnHtml = '';
+    if (isClass) btnHtml = `<button class="slot-btn class-btn" disabled>${isMeal ? '식사시간' : '수업'}</button>`;
+    else if (rsv) btnHtml = `<button class="slot-btn cancel-btn" onclick="openCancelModal(${h})">취소</button>`;
+    else btnHtml = `<button class="slot-btn" onclick="openReserveModal(${h})">예약</button>`;
+    slotsHtml += `<div class="slot-row ${cls}"><span class="slot-time">${String(h).padStart(2,'0')}:00</span>${badge}<span class="slot-info">${info}</span>${btnHtml}</div>`;
+  });
+  area.innerHTML = `<div class="schedule-card">
+    <div class="schedule-top">
+      <div class="schedule-room-name">${state.room}</div>
+      <div class="date-nav">
+        <button class="date-btn" onclick="changeDate(-1)">‹</button>
+        <div class="date-label">${fmtDisplay(state.date)}</div>
+        <button class="date-btn" onclick="changeDate(1)">›</button>
+      </div>
+    </div>
+    <div class="slots-wrap">${slotsHtml}</div>
+  </div>`;
+}
+
+function changeDate(delta) {
+  const d = new Date(state.date);
+  d.setDate(d.getDate() + delta);
+  state.date = d;
+  if (state.room) loadRoom(state.room);
+}
+
+function openModal(type, ctx={}) { state.modalType=type; state.modalCtx=ctx; renderModal(); document.getElementById('modalBackdrop').style.display='flex'; }
+function closeModal() { document.getElementById('modalBackdrop').style.display='none'; }
+function handleBackdropClick(e) { if(e.target===document.getElementById('modalBackdrop')) closeModal(); }
+
+function renderModal(msg='', isSuccess=false) {
+  const box = document.getElementById('modalBox');
+  const { modalType: type, modalCtx: ctx } = state;
+  const alertHtml = msg ? `<div class="alert ${isSuccess?'alert-success':'alert-error'}">${msg}</div>` : '';
+
+  if (type === 'reserve') {
+    const h = ctx.hour;
+    box.innerHTML = `
+      <div class="modal-title">${state.room} 예약</div>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">${fmtDisplay(state.date)} ${String(h).padStart(2,'0')}:00 ~ ${String(h+1).padStart(2,'0')}:00</p>
+      <div class="field"><label>이름</label><input id="ri_name" type="text" placeholder="홍길동"></div>
+      <div class="field"><label>비밀번호</label><input id="ri_pw" type="password" placeholder="취소 시 사용할 비밀번호"><div class="field-hint">예약 취소 시 이 비밀번호가 필요합니다.</div></div>
+      ${alertHtml}
+      <div class="modal-btns">
+        <button class="btn-primary" id="reserveBtn" onclick="doReserve(${h})">예약 확인</button>
+        <button class="btn-secondary" onclick="closeModal()">닫기</button>
+      </div>`;
+    setTimeout(() => document.getElementById('ri_name')?.focus(), 50);
+
+  } else if (type === 'cancel') {
+    const h = ctx.hour;
+    const key = `${state.room}__${fmtDate(state.date)}__${h}`;
+    const rsv = (state.reservations[state.room]?.data || {})[key];
+    box.innerHTML = `
+      <div class="modal-title">예약 취소</div>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">${state.room} · ${fmtDisplay(state.date)} ${String(h).padStart(2,'0')}:00</p>
+      ${rsv ? `<p style="font-size:13px;font-weight:600;margin-bottom:1rem">예약자: ${rsv.name}</p>` : ''}
+      <div class="field"><label>비밀번호 확인</label><input id="ci_pw" type="password" placeholder="예약 시 입력한 비밀번호"></div>
+      ${alertHtml}
+      <div class="modal-btns">
+        <button class="btn-primary btn-danger" id="cancelBtn" onclick="doCancel(${h})">취소 확인</button>
+        <button class="btn-secondary" onclick="closeModal()">닫기</button>
+      </div>`;
+    setTimeout(() => document.getElementById('ci_pw')?.focus(), 50);
+  }
+}
+
+function openReserveModal(h) { openModal('reserve', { hour: h }); }
+function openCancelModal(h) { openModal('cancel', { hour: h }); }
+
+async function doReserve(h) {
+  const name = document.getElementById('ri_name').value.trim();
+  const pw = document.getElementById('ri_pw').value;
+  if (!name) { renderModal('이름을 입력해주세요.'); return; }
+  if (!pw) { renderModal('비밀번호를 입력해주세요.'); return; }
+  const btn = document.getElementById('reserveBtn');
+  btn.disabled = true; btn.textContent = '저장 중...';
+  const key = `${state.room}__${fmtDate(state.date)}__${h}`;
+  if ((state.reservations[state.room]?.data || {})[key]) {
+    renderModal('이미 예약된 시간입니다.'); btn.disabled=false; btn.textContent='예약 확인'; return;
+  }
+  const pwHash = btoa(unescape(encodeURIComponent(pw)));
+  const ok = await sbInsert(state.room, state.date, h, name, pwHash);
+  if (ok) {
+    await loadRoom(state.room);
+    renderModal('예약이 완료되었습니다! 🎉', true);
+    setTimeout(() => { closeModal(); renderSchedule(); }, 1300);
+  } else {
+    renderModal('저장에 실패했습니다. 다시 시도해주세요.');
+    btn.disabled=false; btn.textContent='예약 확인';
+  }
+}
+
+async function doCancel(h) {
+  const pw = document.getElementById('ci_pw').value;
+  if (!pw) { renderModal('비밀번호를 입력하세요.'); return; }
+  const key = `${state.room}__${fmtDate(state.date)}__${h}`;
+  const rsv = (state.reservations[state.room]?.data || {})[key];
+  if (!rsv) { renderModal('예약 정보를 찾을 수 없습니다.'); return; }
+  const pwHash = btoa(unescape(encodeURIComponent(pw)));
+  if (pwHash !== rsv.pwHash) { renderModal('비밀번호가 일치하지 않습니다.'); return; }
+  const btn = document.getElementById('cancelBtn');
+  btn.disabled = true; btn.textContent = '처리 중...';
+  const ok = await sbDelete(state.room, state.date, h);
+  if (ok) {
+    await loadRoom(state.room);
+    renderModal('예약이 취소되었습니다.', true);
+    setTimeout(() => { closeModal(); renderSchedule(); }, 1300);
+  } else {
+    renderModal('저장에 실패했습니다. 다시 시도해주세요.');
+    btn.disabled=false; btn.textContent='취소 확인';
+  }
+}
+</script>
+</body>
+</html>
