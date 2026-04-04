@@ -1301,18 +1301,16 @@ async function handleExcelImport(event) {
     }
   }
 
-  // 3단계: 확장된 날짜 범위 전체를 DB에서 조회
-  const allDates = new Set();
-  for (const room of Object.keys(expandedSlots)) {
-    for (const key of Object.keys(expandedSlots[room])) allDates.add(key.split('__')[0]);
-  }
-  const dateList = [...allDates].sort().map(s => new Date(s + 'T00:00:00'));
-
+  // 3단계: 방별로 해당 방에 필요한 날짜만 조회 (정확한 매칭)
   const dbData = {};
   for (const room of Object.keys(expandedSlots)) {
     dbData[room] = {};
+    // 이 방에 필요한 날짜만 추출
+    const roomDates = new Set();
+    for (const key of Object.keys(expandedSlots[room])) roomDates.add(key.split('__')[0]);
+    const roomDateList = [...roomDates].sort().map(s => new Date(s + 'T00:00:00'));
     // 날짜가 많으므로 병렬 처리
-    await Promise.all(dateList.map(async d => {
+    await Promise.all(roomDateList.map(async d => {
       const rows = await sbGetReservations(room, d);
       if (rows) rows.forEach(r => {
         const key = `${fmtDate(new Date(r.date))}__${r.hour}`;
@@ -1322,6 +1320,7 @@ async function handleExcelImport(event) {
   }
 
   // 4단계: 차이 계산 — 확장된 슬롯 vs DB
+  // DB에 이미 예약이 존재하는 시간대는 내용·이름 무관하게 추가하지 않음
   const toAdd = [], toDelete = [];
   for (const room of Object.keys(expandedSlots)) {
     const exRoom = expandedSlots[room];
@@ -1333,11 +1332,10 @@ async function handleExcelImport(event) {
       const exVal = exRoom[key];
       const dbVal = dbRoom[key];
       if (isClassHour(room, date, hour)) continue;
-      if (!dbVal) {
-        // DB에 없음(해당 시간대에 예약 없음) → 추가
-        toAdd.push({ room, date, hour, name: exVal.name, reason: exVal.reason });
-      }
-      // DB에 이미 예약이 있는 시간대는 내용과 무관하게 건드리지 않음
+      // DB에 해당 시간대 예약이 이미 존재하면 (이름/내용 무관) 건너뜀
+      if (dbVal) continue;
+      // DB에 없는 경우에만 추가
+      toAdd.push({ room, date, hour, name: exVal.name, reason: exVal.reason });
     }
   }
 
@@ -1423,7 +1421,12 @@ async function doImportApply() {
   }
   for (let i = 0; i < toAdd.length; i++) {
     btn.textContent = `추가 중... (${doneCount + 1}/${total})`;
-    await sbInsert(toAdd[i].room, toAdd[i].date, toAdd[i].hour, toAdd[i].name, IMPORT_PW_HASH, toAdd[i].reason);
+    // 삽입 직전 재확인: DB에 이미 같은 시간대 예약이 있으면 중복 삽입 방지
+    const existingRows = await sbGetReservations(toAdd[i].room, toAdd[i].date);
+    const alreadyExists = existingRows && existingRows.some(r => r.hour === toAdd[i].hour);
+    if (!alreadyExists) {
+      await sbInsert(toAdd[i].room, toAdd[i].date, toAdd[i].hour, toAdd[i].name, IMPORT_PW_HASH, toAdd[i].reason);
+    }
     doneCount++;
   }
 
