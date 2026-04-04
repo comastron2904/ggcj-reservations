@@ -520,16 +520,27 @@ function renderModal(msg='', isSuccess=false) {
 
   } else if (type === 'multiCancel') {
     const slots = ctx.slots || [];
-    const names = [...new Set(slots.map(s => s.rsv?.name).filter(Boolean))];
+    const multiCancelScope = ctx.multiCancelScope || 'selected';
+    const uniqueHours = [...new Set(slots.map(s => s.hour))];
+    const scopeDescMap = {
+      selected: `선택한 ${slots.length}건만 취소합니다.`,
+      allSame:  `선택한 각 시간대(${uniqueHours.map(h => String(h).padStart(2,'0')+':00').join(', ')})에 <b>같은 요일·동일한 이름</b>으로 예약된 건을 모두 취소합니다.`
+    };
     box.innerHTML = `
       <div class="modal-title">복수 예약 취소</div>
-      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;background:var(--surface2);border-radius:var(--radius-sm);padding:8px 10px;line-height:1.8;max-height:180px;overflow-y:auto">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;background:var(--surface2);border-radius:var(--radius-sm);padding:8px 10px;line-height:1.8;max-height:140px;overflow-y:auto">
         ${slots.map(s => `• ${fmtDisplay(s.date)} ${String(s.hour).padStart(2,'0')}:00${s.rsv ? ' — ' + s.rsv.name : ''}`).join('<br>')}
       </div>
-      <div class="field"><label>비밀번호 확인</label><input id="ci_pw" type="password" placeholder="예약 시 입력한 비밀번호"><div class="field-hint">선택한 예약 중 비밀번호가 일치하는 건만 취소됩니다.</div></div>
+      <div style="font-size:11px;font-weight:700;color:var(--text2);letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px">취소 범위</div>
+      <div class="cancel-scope">
+        <button class="cancel-scope-btn ${multiCancelScope==='selected'?'active':''}" onclick="setMultiCancelScope('selected')">선택한 예약만</button>
+        <button class="cancel-scope-btn ${multiCancelScope==='allSame'?'active':''}" onclick="setMultiCancelScope('allSame')">같은 요일·시간 전체</button>
+      </div>
+      <div class="cancel-scope-desc">${scopeDescMap[multiCancelScope]}</div>
+      <div class="field"><label>비밀번호 확인</label><input id="ci_pw" type="password" placeholder="예약 시 입력한 비밀번호"><div class="field-hint">비밀번호가 일치하는 건만 취소됩니다.</div></div>
       ${alertHtml}
       <div class="modal-btns">
-        <button class="btn-primary btn-danger" id="cancelBtn" onclick="doMultiCancel()">취소 확인 (${slots.length}건)</button>
+        <button class="btn-primary btn-danger" id="cancelBtn" onclick="doMultiCancel()">취소 확인 (${slots.length}건${multiCancelScope==='allSame'?' 이상':''})</button>
         <button class="btn-secondary" onclick="closeModal()">닫기</button>
       </div>`;
     setTimeout(() => document.getElementById('ci_pw')?.focus(), 50);
@@ -697,6 +708,17 @@ function setCancelScope(scope) {
   }, 30);
 }
 
+function setMultiCancelScope(scope) {
+  const pw = document.getElementById('ci_pw')?.value || '';
+  state.modalCtx.multiCancelScope = scope;
+  state.modalCtx.savedPw = pw;
+  renderModal();
+  setTimeout(() => {
+    const el = document.getElementById('ci_pw');
+    if (el) { el.value = state.modalCtx.savedPw || ''; el.focus(); }
+  }, 30);
+}
+
 function openCancelModal(h, date) { openModal('cancel', { hour: h, date: date instanceof Date ? date : new Date(date), cancelScope: 'single' }); }
 
 function setRepeatType(type) {
@@ -831,6 +853,7 @@ async function doReserve(h, dateStr) {
 
 async function doMultiCancel() {
   const slots = state.modalCtx.slots || [];
+  const multiCancelScope = state.modalCtx.multiCancelScope || 'selected';
   const pw = document.getElementById('ci_pw').value;
   if (!pw) { renderModal('비밀번호를 입력하세요.'); return; }
   const pwHash = btoa(unescape(encodeURIComponent(pw)));
@@ -839,11 +862,46 @@ async function doMultiCancel() {
   btn.disabled = true;
 
   // 비밀번호 일치하는 슬롯만 필터
-  const targets = slots.filter(s => s.rsv && s.rsv.pwHash === pwHash);
-  const wrongPw = slots.length - targets.length;
+  const validSlots = slots.filter(s => s.rsv && s.rsv.pwHash === pwHash);
+  const wrongPw = slots.length - validSlots.length;
+
+  if (validSlots.length === 0) {
+    renderModal('비밀번호가 일치하는 예약이 없습니다.');
+    btn.disabled = false; return;
+  }
+
+  let targets = [];
+
+  if (multiCancelScope === 'allSame') {
+    // 각 유효 슬롯의 요일+시간 조합으로 DB 전체 조회 후 동일 이름+비번 필터
+    btn.textContent = '조회 중...';
+    const processedHours = new Set();
+    for (const slot of validSlots) {
+      const hourKey = `${slot.date.getDay()}__${slot.hour}`;
+      if (processedHours.has(hourKey)) continue;
+      processedHours.add(hourKey);
+      const allRows = await sbGetReservationsByHour(state.room, slot.hour);
+      if (!allRows) continue;
+      const dow = slot.date.getDay();
+      const matched = allRows.filter(r => {
+        const rd = new Date(r.date);
+        return rd.getDay() === dow && r.name === slot.rsv.name && r.pw_hash === pwHash;
+      });
+      matched.forEach(r => targets.push({ date: new Date(r.date), hour: slot.hour }));
+    }
+    // 중복 제거
+    const seen = new Set();
+    targets = targets.filter(t => {
+      const k = `${fmtDate(t.date)}__${t.hour}`;
+      if (seen.has(k)) return false;
+      seen.add(k); return true;
+    });
+  } else {
+    targets = validSlots.map(s => ({ date: s.date, hour: s.hour }));
+  }
 
   if (targets.length === 0) {
-    renderModal('비밀번호가 일치하는 예약이 없습니다.');
+    renderModal('삭제할 예약을 찾을 수 없습니다.');
     btn.disabled = false; return;
   }
 
@@ -856,10 +914,8 @@ async function doMultiCancel() {
   }
 
   await loadRoom(state.room);
-  const msg = wrongPw > 0
-    ? `${successCount}건 취소됐습니다. (비밀번호 불일치 ${wrongPw}건 제외)`
-    : `${successCount}건 예약이 모두 취소되었습니다. 🗑️`;
-  renderModal(msg, true);
+  const extra = wrongPw > 0 ? ` (비밀번호 불일치 ${wrongPw}건 제외)` : '';
+  renderModal(`${successCount}건 예약이 취소되었습니다. 🗑️${extra}`, true);
   setTimeout(() => {
     closeModal();
     state.selectedCancelSlots.clear();
