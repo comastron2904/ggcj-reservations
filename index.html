@@ -273,17 +273,17 @@ async function sbInsert(room, date, hour, name, pwHash, reason) {
     'apikey': SUPABASE_KEY,
     'Authorization': `Bearer ${SUPABASE_KEY}`,
     'Content-Type': 'application/json',
-    'Prefer': 'return=minimal'
+    // resolution=ignore-duplicates: 같은 id(PK)가 이미 존재하면 삽입 안 하고 넘어감
+    'Prefer': 'return=minimal,resolution=ignore-duplicates'
   };
   try {
     const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
     if (!r.ok) {
       const errText = await r.text();
       console.error(`sbInsert 실패 [${r.status}]:`, errText);
-      // 중복(409)은 이미 체크 후 진입하므로 성공으로 처리
-      if (r.status === 409 || r.status === 422) return false;
+      return false;
     }
-    return r.ok || r.status === 201 || r.status === 204;
+    return true;
   } catch(e) { console.error('sbInsert 예외:', e); return false; }
 }
 
@@ -1301,43 +1301,43 @@ async function handleExcelImport(event) {
     }
   }
 
-  // 3단계: 방별로 해당 방에 필요한 날짜만 조회 (정확한 매칭)
-  const dbData = {};
+  // 3단계: 방별로 예상 id 목록을 직접 DB에 조회 (타임존 문제 원천 차단)
+  // id 형식: "방이름__YYYY-MM-DD__hour" — 날짜 파싱 불필요, 문자열 비교만
+  const existingIds = new Set();
   for (const room of Object.keys(expandedSlots)) {
-    dbData[room] = {};
-    // 이 방에 필요한 날짜만 추출
-    const roomDates = new Set();
-    for (const key of Object.keys(expandedSlots[room])) roomDates.add(key.split('__')[0]);
-    const roomDateList = [...roomDates].sort().map(s => new Date(s + 'T00:00:00'));
-    // 날짜가 많으므로 병렬 처리
-    await Promise.all(roomDateList.map(async d => {
-      const rows = await sbGetReservations(room, d);
-      if (rows) rows.forEach(r => {
-        // new Date(r.date) → UTC 자정으로 파싱되어 한국(+9h)에서 전날로 밀림
-        // 'T00:00:00' 붙여 로컬 시간으로 파싱해야 날짜가 정확함
-        const rDate = r.date.includes('T') ? new Date(r.date) : new Date(r.date + 'T00:00:00');
-        const key = `${fmtDate(rDate)}__${r.hour}`;
-        dbData[room][key] = { name: r.name, reason: r.reason || '', pwHash: r.pw_hash };
-      });
-    }));
+    const ids = Object.keys(expandedSlots[room]).map(key => {
+      const [dateStr, hourStr] = key.split('__');
+      return `${room}__${dateStr}__${hourStr}`;
+    });
+    // Supabase in() 쿼리로 한 번에 조회 (최대 URL 길이 고려해 500개씩 분할)
+    const CHUNK = 500;
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const chunk = ids.slice(i, i + CHUNK);
+      const inParam = chunk.map(id => encodeURIComponent(id)).join(',');
+      const url = `${SUPABASE_URL}/rest/v1/reservations?id=in.(${inParam})&select=id`;
+      try {
+        const r = await fetch(url, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+        if (r.ok) {
+          const rows = await r.json();
+          rows.forEach(row => existingIds.add(row.id));
+        }
+      } catch(e) { console.error('DB 조회 오류:', e); }
+    }
   }
 
-  // 4단계: 차이 계산 — 확장된 슬롯 vs DB
-  // DB에 이미 예약이 존재하는 시간대는 내용·이름 무관하게 추가하지 않음
+  // 4단계: 차이 계산 — id가 DB에 없는 것만 추가 대상
   const toAdd = [], toDelete = [];
   for (const room of Object.keys(expandedSlots)) {
     const exRoom = expandedSlots[room];
-    const dbRoom = dbData[room] || {};
     for (const key of Object.keys(exRoom)) {
       const [dateStr, hourStr] = key.split('__');
       const hour = parseInt(hourStr);
       const date = new Date(dateStr + 'T00:00:00');
       const exVal = exRoom[key];
-      const dbVal = dbRoom[key];
+      const id = `${room}__${dateStr}__${hourStr}`;
       if (isClassHour(room, date, hour)) continue;
-      // DB에 해당 시간대 예약이 이미 존재하면 (이름/내용 무관) 건너뜀
-      if (dbVal) continue;
-      // DB에 없는 경우에만 추가
+      // DB에 동일 id가 이미 존재하면 건너뜀
+      if (existingIds.has(id)) continue;
       toAdd.push({ room, date, hour, name: exVal.name, reason: exVal.reason });
     }
   }
@@ -1424,12 +1424,9 @@ async function doImportApply() {
   }
   for (let i = 0; i < toAdd.length; i++) {
     btn.textContent = `추가 중... (${doneCount + 1}/${total})`;
-    // 삽입 직전 재확인: DB에 이미 같은 시간대 예약이 있으면 중복 삽입 방지
-    const existingRows = await sbGetReservations(toAdd[i].room, toAdd[i].date);
-    const alreadyExists = existingRows && existingRows.some(r => r.hour === toAdd[i].hour);
-    if (!alreadyExists) {
-      await sbInsert(toAdd[i].room, toAdd[i].date, toAdd[i].hour, toAdd[i].name, IMPORT_PW_HASH, toAdd[i].reason);
-    }
+    // sbInsert에 resolution=ignore-duplicates가 설정되어 있어
+    // DB에 동일 id(PK)가 이미 존재하면 서버 측에서 자동으로 무시함
+    await sbInsert(toAdd[i].room, toAdd[i].date, toAdd[i].hour, toAdd[i].name, IMPORT_PW_HASH, toAdd[i].reason);
     doneCount++;
   }
 
