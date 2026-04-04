@@ -400,9 +400,9 @@ function renderSchedule() {
       if (isCancelSelected) cellClass += ' cancel-selected';
       let clickAttr = '';
       if (!isClass && !rsv) {
-        clickAttr = `onclick="handleCellClick(${h}, new Date('${fmtDate(d)}'))"`;
+        clickAttr = `onclick="handleCellClick(${h}, new Date('${fmtDate(d)}T00:00:00'))"`;
       } else if (rsv) {
-        clickAttr = `onclick="handleCancelCellClick(${h}, new Date('${fmtDate(d)}'))"`;
+        clickAttr = `onclick="handleCancelCellClick(${h}, new Date('${fmtDate(d)}T00:00:00'))"`;
       }
       row += `<td><div class="${cellClass}" ${clickAttr}>${inner}</div></td>`;
     });
@@ -693,7 +693,7 @@ function openMultiReserveModal() {
   // Parse selected slots
   const slots = Array.from(state.selectedSlots).map(key => {
     const [dateStr, hourStr] = key.split('__');
-    return { date: new Date(dateStr), hour: parseInt(hourStr) };
+    return { date: new Date(dateStr + 'T00:00:00'), hour: parseInt(hourStr) };
   }).sort((a, b) => a.date - b.date || a.hour - b.hour);
   openModal('multiReserve', { slots, repeatType: 'once' });
 }
@@ -703,7 +703,7 @@ function openMultiCancelModal() {
   const rsvData = state.reservations[state.room]?.data || {};
   const slots = Array.from(state.selectedCancelSlots).map(key => {
     const [dateStr, hourStr] = key.split('__');
-    const d = new Date(dateStr);
+    const d = new Date(dateStr + 'T00:00:00');
     const h = parseInt(hourStr);
     const rsv = rsvData[`${state.room}__${dateStr}__${h}`];
     return { date: d, hour: h, rsv };
@@ -820,7 +820,7 @@ async function doMultiReserve() {
 }
 
 async function doReserve(h, dateStr) {
-  const startDate = new Date(dateStr);
+  const startDate = new Date(dateStr + 'T00:00:00');
   const name = document.getElementById('ri_name').value.trim();
   const reason = document.getElementById('ri_reason').value.trim();
   const pw = document.getElementById('ri_pw').value;
@@ -1467,7 +1467,7 @@ async function doImportApply() {
 // =========================================================
 
 async function doCancel(h, dateStr) {
-  const d = new Date(dateStr);
+  const d = new Date(dateStr + 'T00:00:00');
   const pw = document.getElementById('ci_pw').value;
   if (!pw) { renderModal('비밀번호를 입력하세요.'); return; }
   const key = `${state.room}__${fmtDate(d)}__${h}`;
@@ -1514,7 +1514,7 @@ async function doCancel(h, dateStr) {
     btn.textContent = `삭제 중... (0/${targets.length})`;
     for (let i = 0; i < targets.length; i++) {
       btn.textContent = `삭제 중... (${i+1}/${targets.length})`;
-      const rd = new Date(targets[i].date);
+      const rd = targets[i].date.includes('T') ? new Date(targets[i].date) : new Date(targets[i].date + 'T00:00:00');
       const ok = await sbDelete(state.room, rd, h);
       if (ok) successCount++;
     }
