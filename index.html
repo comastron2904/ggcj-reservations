@@ -82,6 +82,21 @@
   .dot-reserved { background: var(--reserved); }
   .dot-class { background: #818cf8; }
 
+  /* ── 복수 선택 모드 ── */
+  .week-cell.selected { background: #dbeafe !important; outline: 2px solid #3b82f6; outline-offset: -2px; }
+  .week-cell.selected .week-cell-dot { background: #3b82f6; }
+  .multi-bar { position: fixed; bottom: 1.25rem; left: 50%; transform: translateX(-50%); z-index: 100; background: #1e293b; color: #fff; border-radius: 999px; padding: 10px 20px; display: flex; align-items: center; gap: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.25); font-size: 13px; font-weight: 600; white-space: nowrap; animation: slideUp 0.2s ease; }
+  @keyframes slideUp { from{opacity:0;transform:translateX(-50%) translateY(12px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
+  .multi-bar-count { background: #3b82f6; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 12px; }
+  .multi-bar-btn { padding: 6px 14px; border-radius: 999px; border: none; font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer; transition: all 0.15s; }
+  .multi-bar-confirm { background: #3b82f6; color: #fff; }
+  .multi-bar-confirm:hover { background: #2563eb; }
+  .multi-bar-cancel { background: rgba(255,255,255,0.15); color: #fff; }
+  .multi-bar-cancel:hover { background: rgba(255,255,255,0.25); }
+  .select-mode-btn { padding: 5px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text2); font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 5px; }
+  .select-mode-btn:hover { border-color: #3b82f6; color: #3b82f6; background: #eff6ff; }
+  .select-mode-btn.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+
   /* legacy (kept for modal reuse) */
   .slots-wrap { padding: 8px; }
   .slot-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: var(--radius-sm); margin-bottom: 3px; transition: background 0.12s; border: 1px solid transparent; }
@@ -95,6 +110,13 @@
   .slot-btn.cancel-btn:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
   .slot-btn:disabled { opacity: 0.4; cursor: not-allowed; background: var(--surface2); }
   .badge-class { background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe; }
+
+  /* 취소 범위 선택 */
+  .cancel-scope { display: flex; gap: 6px; margin-bottom: 12px; }
+  .cancel-scope-btn { flex: 1; padding: 8px 4px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text2); font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; transition: all 0.15s; text-align: center; }
+  .cancel-scope-btn:hover { border-color: var(--danger); color: var(--danger); background: var(--danger-bg); }
+  .cancel-scope-btn.active { background: var(--danger); color: #fff; border-color: var(--danger); }
+  .cancel-scope-desc { font-size: 11px; color: var(--text3); background: var(--surface2); border-radius: var(--radius-sm); padding: 7px 10px; margin-bottom: 12px; line-height: 1.6; }
   .slot-btn.class-btn { border-color: #c7d2fe; color: #4338ca; background: #eef2ff; cursor: not-allowed; }
 
   .state-box { text-align: center; padding: 3rem 1rem; color: var(--text3); }
@@ -192,7 +214,9 @@ let state = {
   floor: null, room: null,
   date: new Date(),
   reservations: {},
-  modalType: null, modalCtx: {}
+  modalType: null, modalCtx: {},
+  selectMode: false,
+  selectedSlots: new Set()
 };
 
 function fmtDate(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
@@ -237,6 +261,16 @@ async function sbInsert(room, date, hour, name, pwHash, reason) {
     }
     return r.ok || r.status === 201 || r.status === 204;
   } catch(e) { console.error('sbInsert 예외:', e); return false; }
+}
+
+// 동일 방·시간대의 예약 전체 조회 (반복 취소용)
+async function sbGetReservationsByHour(room, hour) {
+  const url = `${SUPABASE_URL}/rest/v1/reservations?room=eq.${encodeURIComponent(room)}&hour=eq.${hour}&select=id,date,name,pw_hash`;
+  try {
+    const r = await fetch(url, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
 }
 
 async function sbDelete(room, date, hour) {
@@ -335,9 +369,15 @@ function renderSchedule() {
         cellClass += ' free' + (isToday ? ' today-col' : '');
         inner = `<div class="week-cell-dot dot-free"></div>`;
       }
-      const clickAttr = (!isClass && !rsv)
-        ? `onclick="openReserveModal(${h}, new Date('${fmtDate(d)}'))"`
-        : (rsv ? `onclick="openCancelModal(${h}, new Date('${fmtDate(d)}'))"` : '');
+      const selKey = `${fmtDate(d)}__${h}`;
+      const isSelected = state.selectedSlots && state.selectedSlots.has(selKey);
+      if (isSelected) cellClass += ' selected';
+      let clickAttr = '';
+      if (!isClass && !rsv) {
+        clickAttr = `onclick="handleCellClick(${h}, new Date('${fmtDate(d)}'))"`;
+      } else if (rsv) {
+        clickAttr = `onclick="openCancelModal(${h}, new Date('${fmtDate(d)}'))"`;
+      }
       row += `<td><div class="${cellClass}" ${clickAttr}>${inner}</div></td>`;
     });
     tbody += `<tr>${row}</tr>`;
@@ -346,10 +386,15 @@ function renderSchedule() {
   area.innerHTML = `<div class="schedule-card">
     <div class="schedule-top">
       <div class="schedule-room-name">${state.room}</div>
-      <div class="date-nav">
-        <button class="date-btn" onclick="changeWeek(-1)">‹</button>
-        <div class="date-label">${startLabel} ~ ${endLabel}</div>
-        <button class="date-btn" onclick="changeWeek(1)">›</button>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <button class="select-mode-btn ${state.selectMode ? 'active' : ''}" onclick="toggleSelectMode()">
+          <span>${state.selectMode ? '✓ 선택 중' : '⊞ 복수 선택'}</span>
+        </button>
+        <div class="date-nav">
+          <button class="date-btn" onclick="changeWeek(-1)">‹</button>
+          <div class="date-label">${startLabel} ~ ${endLabel}</div>
+          <button class="date-btn" onclick="changeWeek(1)">›</button>
+        </div>
       </div>
     </div>
     <div class="week-table-wrap">
@@ -398,7 +443,38 @@ function renderModal(msg='', isSuccess=false) {
   const { modalType: type, modalCtx: ctx } = state;
   const alertHtml = msg ? `<div class="alert ${isSuccess?'alert-success':'alert-error'}">${msg}</div>` : '';
 
-  if (type === 'reserve') {
+  if (type === 'multiReserve') {
+    const slots = ctx.slots || [];
+    const repeatType = ctx.repeatType || 'once';
+    const slotLabels = slots.map(s => `${fmtDisplay(s.date)} ${String(s.hour).padStart(2,'0')}:00`).join(', ');
+    const descMap = {
+      once:    `선택한 ${slots.length}개 시간대에 각각 예약합니다.`,
+      month:   `선택한 각 시간대를 <b>4주(1개월)</b> 동안 반복 예약합니다.`,
+      semester:`선택한 각 시간대를 <b>16주(4개월)</b> 동안 반복 예약합니다.`
+    };
+    box.innerHTML = `
+      <div class="modal-title">${state.room} 복수 예약</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;background:var(--surface2);border-radius:var(--radius-sm);padding:8px 10px;line-height:1.8">
+        ${slots.map(s => `• ${fmtDisplay(s.date)} ${String(s.hour).padStart(2,'0')}:00 ~ ${String(s.hour+1).padStart(2,'0')}:00`).join('<br>')}
+      </div>
+      <div style="font-size:11px;font-weight:700;color:var(--text2);letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px">예약 유형</div>
+      <div class="repeat-select">
+        <button class="repeat-btn ${repeatType==='once'?'active':''}" onclick="setRepeatType('once')">1회</button>
+        <button class="repeat-btn ${repeatType==='month'?'active':''}" onclick="setRepeatType('month')">1개월</button>
+        <button class="repeat-btn ${repeatType==='semester'?'active':''}" onclick="setRepeatType('semester')">4개월(한학기)</button>
+      </div>
+      <div class="repeat-desc">${descMap[repeatType]}</div>
+      <div class="field"><label>이름/부서</label><input id="ri_name" type="text" placeholder="홍길동/교육과정부" value="${ctx.savedName||''}"></div>
+      <div class="field"><label>예약 사유</label><input id="ri_reason" type="text" placeholder="예: 동아리 활동, 보충수업 등" value="${ctx.savedReason||''}"><div class="field-hint">다른 사람이 예약 현황에서 사유를 확인할 수 있습니다.</div></div>
+      <div class="field"><label>비밀번호</label><input id="ri_pw" type="password" placeholder="취소 시 사용할 비밀번호"><div class="field-hint">예약 취소 시 이 비밀번호가 필요합니다.</div></div>
+      ${alertHtml}
+      <div class="modal-btns">
+        <button class="btn-primary" id="reserveBtn" onclick="doMultiReserve()">예약 확인 (${slots.length}건)</button>
+        <button class="btn-secondary" onclick="closeModal()">닫기</button>
+      </div>`;
+    setTimeout(() => { if (!ctx.savedName) document.getElementById('ri_name')?.focus(); }, 50);
+
+  } else if (type === 'reserve') {
     const h = ctx.hour;
     const d = ctx.date;
     const dayName = DAY_KO[d.getDay()];
@@ -431,12 +507,24 @@ function renderModal(msg='', isSuccess=false) {
   } else if (type === 'cancel') {
     const h = ctx.hour;
     const d = ctx.date;
+    const cancelScope = ctx.cancelScope || 'single';
     const key = `${state.room}__${fmtDate(d)}__${h}`;
     const rsv = (state.reservations[state.room]?.data || {})[key];
+    const dayName = DAY_KO[d.getDay()];
+    const scopeDescMap = {
+      single:   `${fmtDisplay(d)} ${String(h).padStart(2,'0')}:00, 이 1건만 취소합니다.`,
+      allSame:  `<b>매주 ${dayName}요일 ${String(h).padStart(2,'0')}:00</b>에 <b>동일한 이름</b>으로 예약된 건을 모두 취소합니다.`
+    };
     box.innerHTML = `
       <div class="modal-title">예약 취소</div>
-      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">${state.room} · ${fmtDisplay(d)} ${String(h).padStart(2,'0')}:00</p>
-      ${rsv ? `<p style="font-size:13px;font-weight:600;margin-bottom:4px">예약자: ${rsv.name}</p>${rsv.reason ? `<p style="font-size:12px;color:var(--text2);margin-bottom:1rem">사유: ${rsv.reason}</p>` : '<p style="margin-bottom:1rem"></p>'}` : ''}
+      <p style="font-size:13px;color:var(--text2);margin-bottom:8px">${state.room} · ${fmtDisplay(d)} (${dayName}) ${String(h).padStart(2,'0')}:00</p>
+      ${rsv ? `<p style="font-size:13px;font-weight:600;margin-bottom:2px">예약자: ${rsv.name}</p>${rsv.reason ? `<p style="font-size:12px;color:var(--text2);margin-bottom:12px">사유: ${rsv.reason}</p>` : '<p style="margin-bottom:12px"></p>'}` : ''}
+      <div style="font-size:11px;font-weight:700;color:var(--text2);letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px">취소 범위</div>
+      <div class="cancel-scope">
+        <button class="cancel-scope-btn ${cancelScope==='single'?'active':''}" onclick="setCancelScope('single')">이 예약만</button>
+        <button class="cancel-scope-btn ${cancelScope==='allSame'?'active':''}" onclick="setCancelScope('allSame')">같은 요일·시간 전체</button>
+      </div>
+      <div class="cancel-scope-desc">${scopeDescMap[cancelScope]}</div>
       <div class="field"><label>비밀번호 확인</label><input id="ci_pw" type="password" placeholder="예약 시 입력한 비밀번호"></div>
       ${alertHtml}
       <div class="modal-btns">
@@ -447,8 +535,80 @@ function renderModal(msg='', isSuccess=false) {
   }
 }
 
+// ── 복수 선택 모드 ──
+function toggleSelectMode() {
+  state.selectMode = !state.selectMode;
+  if (!state.selectMode) {
+    state.selectedSlots.clear();
+    removeMultiBar();
+  }
+  renderSchedule();
+}
+
+function handleCellClick(h, date) {
+  if (!state.selectMode) {
+    openReserveModal(h, date);
+    return;
+  }
+  const key = `${fmtDate(date instanceof Date ? date : new Date(date))}__${h}`;
+  if (state.selectedSlots.has(key)) {
+    state.selectedSlots.delete(key);
+  } else {
+    state.selectedSlots.add(key);
+  }
+  renderSchedule();
+  updateMultiBar();
+}
+
+function updateMultiBar() {
+  removeMultiBar();
+  if (state.selectedSlots.size === 0) return;
+  const bar = document.createElement('div');
+  bar.className = 'multi-bar';
+  bar.id = 'multiBar';
+  bar.innerHTML = `
+    <div class="multi-bar-count">${state.selectedSlots.size}</div>
+    <span>${state.selectedSlots.size}개 시간 선택됨</span>
+    <button class="multi-bar-btn multi-bar-confirm" onclick="openMultiReserveModal()">예약하기</button>
+    <button class="multi-bar-btn multi-bar-cancel" onclick="clearSelection()">취소</button>
+  `;
+  document.body.appendChild(bar);
+}
+
+function removeMultiBar() {
+  const bar = document.getElementById('multiBar');
+  if (bar) bar.remove();
+}
+
+function clearSelection() {
+  state.selectedSlots.clear();
+  removeMultiBar();
+  renderSchedule();
+}
+
+function openMultiReserveModal() {
+  if (state.selectedSlots.size === 0) return;
+  // Parse selected slots
+  const slots = Array.from(state.selectedSlots).map(key => {
+    const [dateStr, hourStr] = key.split('__');
+    return { date: new Date(dateStr), hour: parseInt(hourStr) };
+  }).sort((a, b) => a.date - b.date || a.hour - b.hour);
+  openModal('multiReserve', { slots, repeatType: 'once' });
+}
+
 function openReserveModal(h, date) { openModal('reserve', { hour: h, date: date instanceof Date ? date : new Date(date), repeatType: 'once' }); }
-function openCancelModal(h, date) { openModal('cancel', { hour: h, date: date instanceof Date ? date : new Date(date) }); }
+function setCancelScope(scope) {
+  const pw = document.getElementById('ci_pw')?.value || '';
+  state.modalCtx.cancelScope = scope;
+  state.modalCtx.savedPw = pw;
+  renderModal();
+  setTimeout(() => {
+    const el = document.getElementById('ci_pw');
+    if (el) { el.value = state.modalCtx.savedPw || ''; el.focus(); }
+  }, 30);
+}
+
+function openCancelModal(h, date) { openModal('cancel', { hour: h, date: date instanceof Date ? date : new Date(date), cancelScope: 'single' }); }
 
 function setRepeatType(type) {
   const name = document.getElementById('ri_name')?.value || '';
@@ -469,6 +629,68 @@ function getRepeatDates(startDate, repeatType) {
     dates.push(d);
   }
   return dates;
+}
+
+async function doMultiReserve() {
+  const slots = state.modalCtx.slots || [];
+  const name = document.getElementById('ri_name').value.trim();
+  const reason = document.getElementById('ri_reason').value.trim();
+  const pw = document.getElementById('ri_pw').value;
+  if (!name) { renderModal('이름을 입력해주세요.'); return; }
+  if (!reason) { renderModal('예약 사유를 입력해주세요.'); return; }
+  if (!pw) { renderModal('비밀번호를 입력해주세요.'); return; }
+
+  const btn = document.getElementById('reserveBtn');
+  btn.disabled = true;
+
+  const repeatType = state.modalCtx.repeatType || 'once';
+  const pwHash = btoa(unescape(encodeURIComponent(pw)));
+  const rsvData = state.reservations[state.room]?.data || {};
+
+  // 각 slot에 대해 반복 날짜 생성
+  const allTasks = [];
+  for (const slot of slots) {
+    const dates = getRepeatDates(slot.date, repeatType);
+    for (const d of dates) {
+      allTasks.push({ date: d, hour: slot.hour });
+    }
+  }
+
+  // 충돌 체크
+  const conflicts = allTasks.filter(t => rsvData[`${state.room}__${fmtDate(t.date)}__${t.hour}`]);
+  if (conflicts.length > 0) {
+    const labels = conflicts.map(t => `${fmtDisplay(t.date)} ${String(t.hour).padStart(2,'0')}:00`).join(', ');
+    renderModal(`이미 예약된 시간이 있습니다: ${labels}`);
+    btn.disabled = false; return;
+  }
+
+  let successCount = 0;
+  let lastErr = '';
+  btn.textContent = `저장 중... (0/${allTasks.length})`;
+  for (let i = 0; i < allTasks.length; i++) {
+    btn.textContent = `저장 중... (${i+1}/${allTasks.length})`;
+    const { date, hour } = allTasks[i];
+    const ok = await sbInsert(state.room, date, hour, name, pwHash, reason);
+    if (ok) successCount++;
+    else lastErr = `${fmtDisplay(date)} ${String(hour).padStart(2,'0')}:00`;
+  }
+
+  await loadRoom(state.room);
+  if (successCount === allTasks.length) {
+    renderModal(`${allTasks.length}건 예약이 완료되었습니다! 🎉`, true);
+  } else if (successCount === 0) {
+    renderModal('저장에 실패했습니다. 브라우저 콘솔(F12)에서 오류를 확인해주세요.');
+    btn.disabled = false; btn.textContent = `예약 확인 (${slots.length}건)`; return;
+  } else {
+    renderModal(`${successCount}/${allTasks.length}건 저장됐습니다. 실패: ${lastErr}`, true);
+  }
+  setTimeout(() => {
+    closeModal();
+    state.selectedSlots.clear();
+    state.selectMode = false;
+    removeMultiBar();
+    renderSchedule();
+  }, 1800);
 }
 
 async function doReserve(h, dateStr) {
@@ -523,20 +745,60 @@ async function doCancel(h, dateStr) {
   const pw = document.getElementById('ci_pw').value;
   if (!pw) { renderModal('비밀번호를 입력하세요.'); return; }
   const key = `${state.room}__${fmtDate(d)}__${h}`;
-  const rsv = (state.reservations[state.room]?.data || {})[key];
+  const rsvData = state.reservations[state.room]?.data || {};
+  const rsv = rsvData[key];
   if (!rsv) { renderModal('예약 정보를 찾을 수 없습니다.'); return; }
   const pwHash = btoa(unescape(encodeURIComponent(pw)));
   if (pwHash !== rsv.pwHash) { renderModal('비밀번호가 일치하지 않습니다.'); return; }
+
   const btn = document.getElementById('cancelBtn');
   btn.disabled = true; btn.textContent = '처리 중...';
-  const ok = await sbDelete(state.room, d, h);
-  if (ok) {
-    await loadRoom(state.room);
-    renderModal('예약이 취소되었습니다.', true);
-    setTimeout(() => { closeModal(); renderSchedule(); }, 1300);
+
+  const cancelScope = state.modalCtx.cancelScope || 'single';
+
+  if (cancelScope === 'single') {
+    // 단건 삭제
+    const ok = await sbDelete(state.room, d, h);
+    if (ok) {
+      await loadRoom(state.room);
+      renderModal('예약이 취소되었습니다.', true);
+      setTimeout(() => { closeModal(); renderSchedule(); }, 1300);
+    } else {
+      renderModal('삭제에 실패했습니다. 다시 시도해주세요.');
+      btn.disabled = false; btn.textContent = '취소 확인';
+    }
   } else {
-    renderModal('저장에 실패했습니다. 다시 시도해주세요.');
-    btn.disabled=false; btn.textContent='취소 확인';
+    // 동일 요일·시간대의 동일 이름 전체 삭제
+    btn.textContent = '조회 중...';
+    const allRows = await sbGetReservationsByHour(state.room, h);
+    if (!allRows) {
+      renderModal('예약 목록 조회에 실패했습니다.');
+      btn.disabled = false; btn.textContent = '취소 확인'; return;
+    }
+    const targetDow = d.getDay(); // 같은 요일만
+    const targets = allRows.filter(r => {
+      const rd = new Date(r.date);
+      return rd.getDay() === targetDow && r.name === rsv.name && r.pw_hash === rsv.pwHash;
+    });
+    if (targets.length === 0) {
+      renderModal('삭제할 예약을 찾을 수 없습니다.');
+      btn.disabled = false; btn.textContent = '취소 확인'; return;
+    }
+    let successCount = 0;
+    btn.textContent = `삭제 중... (0/${targets.length})`;
+    for (let i = 0; i < targets.length; i++) {
+      btn.textContent = `삭제 중... (${i+1}/${targets.length})`;
+      const rd = new Date(targets[i].date);
+      const ok = await sbDelete(state.room, rd, h);
+      if (ok) successCount++;
+    }
+    await loadRoom(state.room);
+    if (successCount === targets.length) {
+      renderModal(`${successCount}건 예약이 모두 취소되었습니다. 🗑️`, true);
+    } else {
+      renderModal(`${successCount}/${targets.length}건 취소됐습니다.`, true);
+    }
+    setTimeout(() => { closeModal(); renderSchedule(); }, 1500);
   }
 }
 </script>
