@@ -464,7 +464,7 @@ function renderModal(msg='', isSuccess=false) {
     const descMap = {
       once:    `선택한 ${slots.length}개 시간대에 각각 예약합니다.`,
       month:   `선택한 각 시간대를 <b>4주(1개월)</b> 동안 반복 예약합니다.`,
-      semester:`선택한 각 시간대를 <b>16주(4개월)</b> 동안 반복 예약합니다.`
+      semester:`선택한 각 시간대를 <b>20주(5개월)</b> 동안 반복 예약합니다.`
     };
     box.innerHTML = `
       <div class="modal-title">${state.room} 복수 예약</div>
@@ -475,7 +475,7 @@ function renderModal(msg='', isSuccess=false) {
       <div class="repeat-select">
         <button class="repeat-btn ${repeatType==='once'?'active':''}" onclick="setRepeatType('once')">1회</button>
         <button class="repeat-btn ${repeatType==='month'?'active':''}" onclick="setRepeatType('month')">1개월</button>
-        <button class="repeat-btn ${repeatType==='semester'?'active':''}" onclick="setRepeatType('semester')">4개월(한학기)</button>
+        <button class="repeat-btn ${repeatType==='semester'?'active':''}" onclick="setRepeatType('semester')">5개월(한학기)</button>
       </div>
       <div class="repeat-desc">${descMap[repeatType]}</div>
       <div class="field"><label>이름/부서</label><input id="ri_name" type="text" placeholder="홍길동/교육과정부" value="${ctx.savedName||''}"></div>
@@ -496,7 +496,7 @@ function renderModal(msg='', isSuccess=false) {
     const descMap = {
       once:    `${fmtDisplay(d)} 하루만 예약합니다.`,
       month:   `${fmtDisplay(d)}부터 <b>매주 ${dayName}요일</b> ${String(h).padStart(2,'0')}:00을 <b>4주(1개월)</b> 동안 예약합니다.`,
-      semester:`${fmtDisplay(d)}부터 <b>매주 ${dayName}요일</b> ${String(h).padStart(2,'0')}:00을 <b>16주(4개월)</b> 동안 예약합니다.`
+      semester:`${fmtDisplay(d)}부터 <b>매주 ${dayName}요일</b> ${String(h).padStart(2,'0')}:00을 <b>20주(5개월)</b> 동안 예약합니다.`
     };
     box.innerHTML = `
       <div class="modal-title">${state.room} 예약</div>
@@ -505,7 +505,7 @@ function renderModal(msg='', isSuccess=false) {
       <div class="repeat-select">
         <button class="repeat-btn ${repeatType==='once'?'active':''}" onclick="setRepeatType('once')">1회</button>
         <button class="repeat-btn ${repeatType==='month'?'active':''}" onclick="setRepeatType('month')">1개월</button>
-        <button class="repeat-btn ${repeatType==='semester'?'active':''}" onclick="setRepeatType('semester')">4개월(한학기)</button>
+        <button class="repeat-btn ${repeatType==='semester'?'active':''}" onclick="setRepeatType('semester')">5개월(한학기)</button>
       </div>
       <div class="repeat-desc">${descMap[repeatType]}</div>
       <div class="field"><label>이름/부서</label><input id="ri_name" type="text" placeholder="홍길동/교육과정부" value="${ctx.savedName||''}"></div>
@@ -733,7 +733,7 @@ function setRepeatType(type) {
 // 반복 예약할 날짜 목록 생성
 function getRepeatDates(startDate, repeatType) {
   const dates = [];
-  const weeks = repeatType === 'month' ? 4 : repeatType === 'semester' ? 16 : 1;
+  const weeks = repeatType === 'month' ? 4 : repeatType === 'semester' ? 20 : 1;
   for (let i = 0; i < weeks; i++) {
     const d = new Date(startDate);
     d.setDate(startDate.getDate() + i * 7);
