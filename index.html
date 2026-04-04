@@ -899,10 +899,10 @@ async function doMultiCancel() {
       if (!allRows) continue;
       const dow = slot.date.getDay();
       const matched = allRows.filter(r => {
-        const rd = new Date(r.date);
+        const rd = r.date.includes('T') ? new Date(r.date) : new Date(r.date + 'T00:00:00');
         return rd.getDay() === dow && r.name === slot.rsv.name && r.pw_hash === pwHash;
       });
-      matched.forEach(r => targets.push({ date: new Date(r.date), hour: slot.hour }));
+      matched.forEach(r => targets.push({ date: r.date.includes('T') ? new Date(r.date) : new Date(r.date + 'T00:00:00'), hour: slot.hour }));
     }
     // 중복 제거
     const seen = new Set();
@@ -1313,7 +1313,10 @@ async function handleExcelImport(event) {
     await Promise.all(roomDateList.map(async d => {
       const rows = await sbGetReservations(room, d);
       if (rows) rows.forEach(r => {
-        const key = `${fmtDate(new Date(r.date))}__${r.hour}`;
+        // new Date(r.date) → UTC 자정으로 파싱되어 한국(+9h)에서 전날로 밀림
+        // 'T00:00:00' 붙여 로컬 시간으로 파싱해야 날짜가 정확함
+        const rDate = r.date.includes('T') ? new Date(r.date) : new Date(r.date + 'T00:00:00');
+        const key = `${fmtDate(rDate)}__${r.hour}`;
         dbData[room][key] = { name: r.name, reason: r.reason || '', pwHash: r.pw_hash };
       });
     }));
@@ -1480,7 +1483,7 @@ async function doCancel(h, dateStr) {
     }
     const targetDow = d.getDay(); // 같은 요일만
     const targets = allRows.filter(r => {
-      const rd = new Date(r.date);
+      const rd = r.date.includes('T') ? new Date(r.date) : new Date(r.date + 'T00:00:00');
       return rd.getDay() === targetDow && r.name === rsv.name && r.pw_hash === rsv.pwHash;
     });
     if (targets.length === 0) {
