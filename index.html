@@ -1334,19 +1334,15 @@ async function handleExcelImport(event) {
       const dbVal = dbRoom[key];
       if (isClassHour(room, date, hour)) continue;
       if (!dbVal) {
-        // DB에 없음 → 추가
-        toAdd.push({ room, date, hour, name: exVal.name, reason: exVal.reason });
-      } else if (exVal.name !== dbVal.name || exVal.reason !== dbVal.reason) {
-        // 내용이 다름 → 삭제 후 추가
-        toDelete.push({ room, date, hour, name: dbVal.name, pwHash: dbVal.pwHash });
+        // DB에 없음(해당 시간대에 예약 없음) → 추가
         toAdd.push({ room, date, hour, name: exVal.name, reason: exVal.reason });
       }
-      // 동일하면 그대로 유지
+      // DB에 이미 예약이 있는 시간대는 내용과 무관하게 건드리지 않음
     }
   }
 
   if (toAdd.length === 0 && toDelete.length === 0) {
-    alert('엑셀 파일의 20주치 예약이 이미 DB와 일치합니다.\n변경 사항이 없습니다.');
+    alert('추가할 예약이 없습니다.\n엑셀의 모든 시간대에 이미 예약이 존재합니다.');
     return;
   }
 
