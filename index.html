@@ -96,6 +96,13 @@
   .select-mode-btn { padding: 5px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text2); font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 5px; }
   .select-mode-btn:hover { border-color: #3b82f6; color: #3b82f6; background: #eff6ff; }
   .select-mode-btn.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+  .select-mode-btn.cancel-mode { border-color: var(--reserved); color: var(--reserved); }
+  .select-mode-btn.cancel-mode:hover { background: var(--reserved-bg); }
+  .select-mode-btn.cancel-mode.active { background: var(--danger); color: #fff; border-color: var(--danger); }
+  .week-cell.cancel-selected { background: #fee2e2 !important; outline: 2px solid var(--danger); outline-offset: -2px; }
+  .multi-bar.cancel-bar { background: #7f1d1d; }
+  .multi-bar-confirm.cancel-confirm { background: var(--danger); }
+  .multi-bar-confirm.cancel-confirm:hover { background: #8a2a1c; }
 
   /* legacy (kept for modal reuse) */
   .slots-wrap { padding: 8px; }
@@ -216,7 +223,9 @@ let state = {
   reservations: {},
   modalType: null, modalCtx: {},
   selectMode: false,
-  selectedSlots: new Set()
+  selectedSlots: new Set(),
+  cancelSelectMode: false,
+  selectedCancelSlots: new Set()
 };
 
 function fmtDate(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
@@ -371,12 +380,14 @@ function renderSchedule() {
       }
       const selKey = `${fmtDate(d)}__${h}`;
       const isSelected = state.selectedSlots && state.selectedSlots.has(selKey);
+      const isCancelSelected = state.selectedCancelSlots && state.selectedCancelSlots.has(selKey);
       if (isSelected) cellClass += ' selected';
+      if (isCancelSelected) cellClass += ' cancel-selected';
       let clickAttr = '';
       if (!isClass && !rsv) {
         clickAttr = `onclick="handleCellClick(${h}, new Date('${fmtDate(d)}'))"`;
       } else if (rsv) {
-        clickAttr = `onclick="openCancelModal(${h}, new Date('${fmtDate(d)}'))"`;
+        clickAttr = `onclick="handleCancelCellClick(${h}, new Date('${fmtDate(d)}'))"`;
       }
       row += `<td><div class="${cellClass}" ${clickAttr}>${inner}</div></td>`;
     });
@@ -388,7 +399,10 @@ function renderSchedule() {
       <div class="schedule-room-name">${state.room}</div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <button class="select-mode-btn ${state.selectMode ? 'active' : ''}" onclick="toggleSelectMode()">
-          <span>${state.selectMode ? '✓ 선택 중' : '⊞ 복수 선택'}</span>
+          <span>${state.selectMode ? '✓ 예약선택 중' : '⊞ 복수 예약'}</span>
+        </button>
+        <button class="select-mode-btn cancel-mode ${state.cancelSelectMode ? 'active' : ''}" onclick="toggleCancelSelectMode()">
+          <span>${state.cancelSelectMode ? '✓ 취소선택 중' : '✕ 복수 취소'}</span>
         </button>
         <div class="date-nav">
           <button class="date-btn" onclick="changeWeek(-1)">‹</button>
@@ -504,6 +518,22 @@ function renderModal(msg='', isSuccess=false) {
       </div>`;
     setTimeout(() => { if (!ctx.savedName) document.getElementById('ri_name')?.focus(); }, 50);
 
+  } else if (type === 'multiCancel') {
+    const slots = ctx.slots || [];
+    const names = [...new Set(slots.map(s => s.rsv?.name).filter(Boolean))];
+    box.innerHTML = `
+      <div class="modal-title">복수 예약 취소</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;background:var(--surface2);border-radius:var(--radius-sm);padding:8px 10px;line-height:1.8;max-height:180px;overflow-y:auto">
+        ${slots.map(s => `• ${fmtDisplay(s.date)} ${String(s.hour).padStart(2,'0')}:00${s.rsv ? ' — ' + s.rsv.name : ''}`).join('<br>')}
+      </div>
+      <div class="field"><label>비밀번호 확인</label><input id="ci_pw" type="password" placeholder="예약 시 입력한 비밀번호"><div class="field-hint">선택한 예약 중 비밀번호가 일치하는 건만 취소됩니다.</div></div>
+      ${alertHtml}
+      <div class="modal-btns">
+        <button class="btn-primary btn-danger" id="cancelBtn" onclick="doMultiCancel()">취소 확인 (${slots.length}건)</button>
+        <button class="btn-secondary" onclick="closeModal()">닫기</button>
+      </div>`;
+    setTimeout(() => document.getElementById('ci_pw')?.focus(), 50);
+
   } else if (type === 'cancel') {
     const h = ctx.hour;
     const d = ctx.date;
@@ -538,10 +568,27 @@ function renderModal(msg='', isSuccess=false) {
 // ── 복수 선택 모드 ──
 function toggleSelectMode() {
   state.selectMode = !state.selectMode;
-  if (!state.selectMode) {
+  if (state.selectMode) {
+    // 취소 선택 모드 끄기
+    state.cancelSelectMode = false;
+    state.selectedCancelSlots.clear();
+  } else {
     state.selectedSlots.clear();
-    removeMultiBar();
   }
+  removeMultiBar();
+  renderSchedule();
+}
+
+function toggleCancelSelectMode() {
+  state.cancelSelectMode = !state.cancelSelectMode;
+  if (state.cancelSelectMode) {
+    // 예약 선택 모드 끄기
+    state.selectMode = false;
+    state.selectedSlots.clear();
+  } else {
+    state.selectedCancelSlots.clear();
+  }
+  removeMultiBar();
   renderSchedule();
 }
 
@@ -560,19 +607,45 @@ function handleCellClick(h, date) {
   updateMultiBar();
 }
 
+function handleCancelCellClick(h, date) {
+  if (!state.cancelSelectMode) {
+    openCancelModal(h, date);
+    return;
+  }
+  const key = `${fmtDate(date instanceof Date ? date : new Date(date))}__${h}`;
+  if (state.selectedCancelSlots.has(key)) {
+    state.selectedCancelSlots.delete(key);
+  } else {
+    state.selectedCancelSlots.add(key);
+  }
+  renderSchedule();
+  updateMultiBar();
+}
+
 function updateMultiBar() {
   removeMultiBar();
-  if (state.selectedSlots.size === 0) return;
   const bar = document.createElement('div');
-  bar.className = 'multi-bar';
   bar.id = 'multiBar';
-  bar.innerHTML = `
-    <div class="multi-bar-count">${state.selectedSlots.size}</div>
-    <span>${state.selectedSlots.size}개 시간 선택됨</span>
-    <button class="multi-bar-btn multi-bar-confirm" onclick="openMultiReserveModal()">예약하기</button>
-    <button class="multi-bar-btn multi-bar-cancel" onclick="clearSelection()">취소</button>
-  `;
-  document.body.appendChild(bar);
+
+  if (state.cancelSelectMode && state.selectedCancelSlots.size > 0) {
+    bar.className = 'multi-bar cancel-bar';
+    bar.innerHTML = `
+      <div class="multi-bar-count" style="background:var(--danger)">${state.selectedCancelSlots.size}</div>
+      <span>${state.selectedCancelSlots.size}개 예약 선택됨</span>
+      <button class="multi-bar-btn multi-bar-confirm cancel-confirm" onclick="openMultiCancelModal()">취소하기</button>
+      <button class="multi-bar-btn multi-bar-cancel" onclick="clearSelection()">선택 해제</button>
+    `;
+    document.body.appendChild(bar);
+  } else if (state.selectMode && state.selectedSlots.size > 0) {
+    bar.className = 'multi-bar';
+    bar.innerHTML = `
+      <div class="multi-bar-count">${state.selectedSlots.size}</div>
+      <span>${state.selectedSlots.size}개 시간 선택됨</span>
+      <button class="multi-bar-btn multi-bar-confirm" onclick="openMultiReserveModal()">예약하기</button>
+      <button class="multi-bar-btn multi-bar-cancel" onclick="clearSelection()">선택 해제</button>
+    `;
+    document.body.appendChild(bar);
+  }
 }
 
 function removeMultiBar() {
@@ -582,6 +655,9 @@ function removeMultiBar() {
 
 function clearSelection() {
   state.selectedSlots.clear();
+  state.selectedCancelSlots.clear();
+  state.selectMode = false;
+  state.cancelSelectMode = false;
   removeMultiBar();
   renderSchedule();
 }
@@ -594,6 +670,19 @@ function openMultiReserveModal() {
     return { date: new Date(dateStr), hour: parseInt(hourStr) };
   }).sort((a, b) => a.date - b.date || a.hour - b.hour);
   openModal('multiReserve', { slots, repeatType: 'once' });
+}
+
+function openMultiCancelModal() {
+  if (state.selectedCancelSlots.size === 0) return;
+  const rsvData = state.reservations[state.room]?.data || {};
+  const slots = Array.from(state.selectedCancelSlots).map(key => {
+    const [dateStr, hourStr] = key.split('__');
+    const d = new Date(dateStr);
+    const h = parseInt(hourStr);
+    const rsv = rsvData[`${state.room}__${dateStr}__${h}`];
+    return { date: d, hour: h, rsv };
+  }).sort((a, b) => a.date - b.date || a.hour - b.hour);
+  openModal('multiCancel', { slots });
 }
 
 function openReserveModal(h, date) { openModal('reserve', { hour: h, date: date instanceof Date ? date : new Date(date), repeatType: 'once' }); }
@@ -738,6 +827,46 @@ async function doReserve(h, dateStr) {
     renderModal(`${successCount}/${dates.length}건 저장됐습니다. 실패: ${lastErr}`, true);
   }
   setTimeout(() => { closeModal(); renderSchedule(); }, 1800);
+}
+
+async function doMultiCancel() {
+  const slots = state.modalCtx.slots || [];
+  const pw = document.getElementById('ci_pw').value;
+  if (!pw) { renderModal('비밀번호를 입력하세요.'); return; }
+  const pwHash = btoa(unescape(encodeURIComponent(pw)));
+
+  const btn = document.getElementById('cancelBtn');
+  btn.disabled = true;
+
+  // 비밀번호 일치하는 슬롯만 필터
+  const targets = slots.filter(s => s.rsv && s.rsv.pwHash === pwHash);
+  const wrongPw = slots.length - targets.length;
+
+  if (targets.length === 0) {
+    renderModal('비밀번호가 일치하는 예약이 없습니다.');
+    btn.disabled = false; return;
+  }
+
+  let successCount = 0;
+  btn.textContent = `삭제 중... (0/${targets.length})`;
+  for (let i = 0; i < targets.length; i++) {
+    btn.textContent = `삭제 중... (${i+1}/${targets.length})`;
+    const ok = await sbDelete(state.room, targets[i].date, targets[i].hour);
+    if (ok) successCount++;
+  }
+
+  await loadRoom(state.room);
+  const msg = wrongPw > 0
+    ? `${successCount}건 취소됐습니다. (비밀번호 불일치 ${wrongPw}건 제외)`
+    : `${successCount}건 예약이 모두 취소되었습니다. 🗑️`;
+  renderModal(msg, true);
+  setTimeout(() => {
+    closeModal();
+    state.selectedCancelSlots.clear();
+    state.cancelSelectMode = false;
+    removeMultiBar();
+    renderSchedule();
+  }, 1600);
 }
 
 async function doCancel(h, dateStr) {
