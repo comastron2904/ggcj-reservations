@@ -993,7 +993,7 @@ async function exportAllToExcel() {
      */
 
     // ── 헤더 행 ──
-    const headerRow = ['시간대', '구분'];
+    const headerRow = ['시간대', '교시', '구분'];
     days.forEach(d => {
       const dayName = DAY_KO[d.getDay()];
       headerRow.push(`${d.getMonth()+1}/${d.getDate()} (${dayName})`);
@@ -1001,9 +1001,14 @@ async function exportAllToExcel() {
 
     const wsData = [headerRow];
 
+    // ── 교시 매핑 ──
+    const PERIOD_MAP = { 9:1, 10:2, 11:3, 12:4, 14:5, 15:6, 16:7 };
+
     // ── 시간대별 3행 데이터 ──
     HOURS.forEach(h => {
       const timeLabel = `${String(h).padStart(2,'0')}:00\n~\n${String(h+1).padStart(2,'0')}:00`;
+      const periodNum = PERIOD_MAP[h];
+      const periodLabel = periodNum ? `${periodNum}교시` : '';
 
       // 각 요일의 값을 미리 수집
       const dayValues = days.map(d => {
@@ -1015,18 +1020,18 @@ async function exportAllToExcel() {
         return { name: '', reason: '', pw: '', isClass: false, isRsv: false };
       });
 
-      // 행1: 이름/부서
-      const nameRow = [timeLabel, '이름/부서'];
+      // 행1: 이름/부서 (C=0 시간대, C=1 교시, C=2 레이블, C=3+ 데이터)
+      const nameRow = [timeLabel, periodLabel, '이름/부서'];
       dayValues.forEach(v => nameRow.push(v.isClass ? '수업' : v.name));
       wsData.push(nameRow);
 
       // 행2: 예약사유
-      const reasonRow = ['', '예약사유(수업)'];
+      const reasonRow = ['', '', '예약사유(수업)'];
       dayValues.forEach(v => reasonRow.push(v.isClass ? '' : v.reason));
       wsData.push(reasonRow);
 
       // 행3: 비밀번호
-      const pwRow = ['', '비밀번호'];
+      const pwRow = ['', '', '비밀번호'];
       dayValues.forEach(v => pwRow.push(v.isClass ? '' : v.pw));
       wsData.push(pwRow);
     });
@@ -1034,9 +1039,10 @@ async function exportAllToExcel() {
     const ws = XLSX.utils.aoa_to_sheet(wsData);
 
     // ── 열 너비 설정 ──
-    // C0: 시간대, C1: 구분 레이블, C2+: 요일
+    // C0: 시간대, C1: 교시, C2: 구분 레이블, C3+: 요일
     ws['!cols'] = [
       { wch: 13 },  // 시간대
+      { wch: 8  },  // 교시
       { wch: 13 },  // 구분
       ...days.map(() => ({ wch: 18 }))
     ];
@@ -1044,14 +1050,14 @@ async function exportAllToExcel() {
     const totalRows = wsData.length;
     const totalCols = headerRow.length;
 
-    // ── 시간대 열 병합 (C=0, 3행씩) ──
+    // ── 시간대(C=0) + 교시(C=1) 열 병합 (3행씩) ──
     ws['!merges'] = ws['!merges'] || [];
     HOURS.forEach((h, idx) => {
       const startRow = 1 + idx * 3; // 0-indexed, 헤더는 R=0
-      ws['!merges'].push({
-        s: { r: startRow,     c: 0 },
-        e: { r: startRow + 2, c: 0 }
-      });
+      // 시간대 병합
+      ws['!merges'].push({ s: { r: startRow, c: 0 }, e: { r: startRow + 2, c: 0 } });
+      // 교시 병합
+      ws['!merges'].push({ s: { r: startRow, c: 1 }, e: { r: startRow + 2, c: 1 } });
     });
 
     // ── 스타일 적용 ──
@@ -1090,8 +1096,19 @@ async function exportAllToExcel() {
           border: thinBorder
         };
 
-        // C=1 레이블 셀
-        const labelAddr = XLSX.utils.encode_cell({ r: R, c: 1 });
+        // C=1 교시 셀 (병합된 첫 행만 스타일, 나머지는 빈 셀)
+        const periodAddr = XLSX.utils.encode_cell({ r: R, c: 1 });
+        if (!ws[periodAddr]) ws[periodAddr] = { t: 's', v: '' };
+        const periodNum2 = PERIOD_MAP[h];
+        ws[periodAddr].s = {
+          font: { bold: true, sz: 11, color: { rgb: periodNum2 ? 'B03A2E' : '9E9D97' } },
+          fill: { fgColor: { rgb: 'FDF0EE' } },
+          alignment: { horizontal: 'center', vertical: 'center' },
+          border: thinBorder
+        };
+
+        // C=2 레이블 셀
+        const labelAddr = XLSX.utils.encode_cell({ r: R, c: 2 });
         if (!ws[labelAddr]) ws[labelAddr] = { t: 's', v: subLabels[sub] };
         const labelColors = [
           { fill: 'EBF5FB', font: '1A5276' }, // 이름/부서: 파란 계열
@@ -1105,8 +1122,8 @@ async function exportAllToExcel() {
           border: thinBorder
         };
 
-        // C=2+ 요일 데이터 셀
-        for (let C = 2; C < totalCols; C++) {
+        // C=3+ 요일 데이터 셀
+        for (let C = 3; C < totalCols; C++) {
           const addr = XLSX.utils.encode_cell({ r: R, c: C });
           if (!ws[addr]) ws[addr] = { t: 's', v: '' };
           const val = ws[addr].v;
@@ -1124,7 +1141,7 @@ async function exportAllToExcel() {
           // 수업인 셀은 예약사유/비밀번호 행도 동일한 수업 스타일 유지
           // (이름/부서 행에서 수업이면 아래 두 행도 같은 배경)
           // → 해당 날짜의 isClass 여부를 다시 체크
-          const dayIdx = C - 2;
+          const dayIdx = C - 3;
           const d = days[dayIdx];
           const isClass = d ? isClassHour(room, d, h) : false;
           if (isClass && sub !== 0) { fillColor = 'EEF2FF'; }
@@ -1233,13 +1250,13 @@ async function handleExcelImport(event) {
     baseSlots[room] = [];
 
     // 새 형식(3행/시간대) 또는 구형식(1행/시간대) 자동 감지
-    // 구분 열(C=1)에 '이름/부서' 텍스트가 있으면 새 형식
-    const isNewFormat = rows.length > 1 && String(rows[1][1] || '').trim() === '이름/부서';
+    // 구분 열(C=2)에 '이름/부서' 텍스트가 있으면 새 형식
+    const isNewFormat = rows.length > 1 && String(rows[1][2] || '').trim() === '이름/부서';
 
     if (isNewFormat) {
-      // 새 형식: C=0 시간대, C=1 구분 레이블, C=2+ 요일
+      // 새 형식: C=0 시간대, C=1 교시, C=2 구분 레이블, C=3+ 요일
       const colDatesNew = [];
-      for (let c = 2; c < headerRow.length; c++) {
+      for (let c = 3; c < headerRow.length; c++) {
         colDatesNew[c] = parseHeaderDate(headerRow[c], refYear);
       }
 
@@ -1256,7 +1273,7 @@ async function handleExcelImport(event) {
         const hour = hourMatch ? parseInt(hourMatch[1]) : null;
         if (hour === null) { r += 3; continue; }
 
-        for (let c = 2; c < nameRow.length; c++) {
+        for (let c = 3; c < nameRow.length; c++) {
           const date = colDatesNew[c];
           if (!date) continue;
           const name   = String(nameRow[c]   || '').trim();
