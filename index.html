@@ -38,7 +38,8 @@
   .site-title { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; display: flex; align-items: center; gap: 8px; }
   .site-title span { color: var(--accent); }
 
-  .container { max-width: 780px; margin: 0 auto; padding: 1.5rem 1rem; }
+  .container { max-width: 780px; margin: 0 auto; padding: 1.5rem 1rem; transition: max-width 0.2s; }
+  .container.science-room { max-width: 980px; }
 
   .floor-tabs { display: flex; background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); padding: 4px; gap: 4px; margin-bottom: 1rem; box-shadow: var(--shadow); }
   .floor-tab { flex: 1; padding: 9px; border: none; border-radius: var(--radius-sm); background: transparent; color: var(--text2); font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer; transition: all 0.15s; }
@@ -422,6 +423,7 @@ function renderSchedule() {
   });
 
   const isScienceRoom = state.room === '과학실1' || state.room === '과학실2';
+  document.querySelector('.container').classList.toggle('science-room', isScienceRoom);
   const scienceNotice = isScienceRoom ? `
     <div style="
       min-width: 160px;
@@ -448,7 +450,7 @@ function renderSchedule() {
     </div>` : '';
 
   area.innerHTML = `<div style="display:flex;gap:12px;align-items:flex-start;">
-    <div class="schedule-card" style="flex:1;min-width:0;">
+    <div class="schedule-card" style="width:780px;flex-shrink:0;">
     <div class="schedule-top">
       <div class="schedule-room-name">${state.room}</div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
