@@ -63,9 +63,9 @@
   .week-table { width: 100%; border-collapse: collapse; font-size: 12px; }
   .week-table th, .week-table td { border: 1px solid var(--border); text-align: center; padding: 0; }
   .week-table thead th { background: var(--surface2); font-weight: 700; font-size: 12px; padding: 7px 4px; position: sticky; top: 0; z-index: 2; }
-  .week-table thead th.time-col { width: 52px; min-width: 52px; }
+  .week-table thead th.time-col { width: 58px; min-width: 58px; }
   .week-table thead th.today-col { background: var(--accent-bg); color: var(--accent); }
-  .week-table .time-cell { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text3); font-weight: 500; padding: 6px 4px; background: var(--surface2); white-space: nowrap; }
+  .week-table .time-cell { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text3); font-weight: 500; padding: 6px 4px; background: var(--surface2); white-space: normal; text-align: center; line-height: 1.5; }
   .week-cell { width: 100%; height: 100%; min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 2px; cursor: pointer; transition: background 0.12s; }
   .week-cell:hover { filter: brightness(0.95); }
   .week-cell.free { background: var(--surface); }
@@ -223,6 +223,17 @@ const FLOORS = {
 };
 const HOURS = Array.from({length: 14}, (_, i) => i + 8);
 
+const HOUR_LABEL = {
+  9:  '1교시',
+  10: '2교시',
+  11: '3교시',
+  12: '4교시',
+  13: '점심',
+  14: '5교시',
+  15: '6교시',
+  16: '7교시'
+};
+
 const CLASS_HOURS = {};
 
 function isClassHour(room, date, hour) {
@@ -374,7 +385,8 @@ function renderSchedule() {
   // 바디 행
   let tbody = '';
   HOURS.forEach(h => {
-    let row = `<td class="time-cell">${String(h).padStart(2,'0')}:00</td>`;
+    const label = HOUR_LABEL[h] ? `<br><span style="font-size:10px;color:var(--accent);font-weight:700;font-family:'Noto Sans KR',sans-serif;">${HOUR_LABEL[h]}</span>` : '';
+    let row = `<td class="time-cell">${String(h).padStart(2,'0')}:00${label}</td>`;
     days.forEach(d => {
       const key = `${state.room}__${fmtDate(d)}__${h}`;
       const rsv = rsvData[key];
