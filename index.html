@@ -172,6 +172,64 @@
     .slot-row { padding: 8px; gap: 7px; }
     .slot-time { width: 48px; font-size: 12px; }
   }
+
+  /* ── Week picker ── */
+  .week-picker-btn { width: 30px; height: 30px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text2); font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; font-family: inherit; }
+  .week-picker-btn:hover { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+  .week-picker-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .week-picker-popup {
+    position: absolute;
+    z-index: 300;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    width: 220px;
+    overflow: hidden;
+    animation: popupIn 0.15s ease;
+  }
+  @keyframes popupIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
+
+  .week-picker-header {
+    padding: 9px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text2);
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .week-picker-scroll {
+    max-height: 300px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border2) transparent;
+  }
+  .week-picker-scroll::-webkit-scrollbar { width: 4px; }
+  .week-picker-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .week-picker-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 14px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: 'DM Mono', monospace;
+    transition: background 0.1s;
+    border-bottom: 1px solid var(--border);
+    gap: 8px;
+  }
+  .week-picker-item:last-child { border-bottom: none; }
+  .week-picker-item:hover { background: var(--accent-bg); color: var(--accent); }
+  .week-picker-item.current { background: var(--accent); color: #fff; font-weight: 700; }
+  .week-picker-item.current:hover { background: var(--accent-dark); }
+  .week-picker-week-num { font-size: 10px; opacity: 0.6; flex-shrink: 0; }
 </style>
 </head>
 <body>
@@ -190,7 +248,7 @@
     </button>
     <input type="file" id="excelImportInput" accept=".xlsx,.xls" style="display:none" onchange="handleExcelImport(event)">
   </div>
-  <div style="font-size:10px;color:var(--text3);letter-spacing:0.3px;text-align:right;">相扶相助</div>
+  <div style="font-size:10px;color:var(--text3);letter-spacing:0.3px;text-align:right;">by DH</div>
 </header>
 
 <div class="container">
@@ -252,7 +310,9 @@ let state = {
   selectMode: false,
   selectedSlots: new Set(),
   cancelSelectMode: false,
-  selectedCancelSlots: new Set()
+  selectedCancelSlots: new Set(),
+  weekPickerOpen: false,
+  weekPickerOffset: 0  // 팝업 내 스크롤 오프셋 (주 단위, 음수=과거)
 };
 
 function fmtDate(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
@@ -362,6 +422,101 @@ function changeWeek(delta) {
   if (state.room) loadRoom(state.room);
 }
 
+// ── 주간 목록 팝업 ──
+function toggleWeekPicker(e) {
+  e.stopPropagation();
+  state.weekPickerOpen = !state.weekPickerOpen;
+  const popup = document.getElementById('weekPickerPopup');
+  if (!popup) return;
+  if (state.weekPickerOpen) {
+    renderWeekPickerPopup();
+    popup.style.display = 'block';
+    // 닫기 이벤트 등록
+    setTimeout(() => {
+      document.addEventListener('click', closeWeekPickerOnOutside, { once: true });
+    }, 0);
+  } else {
+    popup.style.display = 'none';
+  }
+}
+
+function closeWeekPickerOnOutside(e) {
+  const popup = document.getElementById('weekPickerPopup');
+  if (popup && !popup.contains(e.target)) {
+    state.weekPickerOpen = false;
+    popup.style.display = 'none';
+  }
+}
+
+function renderWeekPickerPopup() {
+  const popup = document.getElementById('weekPickerPopup');
+  if (!popup) return;
+
+  const currentMonday = getWeekMonday(state.date).getTime();
+  const todayMonday = getWeekMonday(new Date()).getTime();
+
+  // offset=0 기준: 오늘 주 포함 이후 10주 + 이전 주들(스크롤)
+  // 총 표시 범위: offset 기준 -4주 ~ +10주 (14주)
+  const START = state.weekPickerOffset - 4;
+  const END = state.weekPickerOffset + 10;
+
+  let html = `
+    <div class="week-picker-header">
+      <span>주간 선택</span>
+      <span style="font-size:10px;font-weight:400;color:var(--text3)">휠로 스크롤</span>
+    </div>
+    <div class="week-picker-scroll" id="weekPickerScroll">
+  `;
+
+  for (let i = START; i < END; i++) {
+    const mon = new Date(todayMonday);
+    mon.setDate(mon.getDate() + i * 7);
+    const sun = new Date(mon);
+    sun.setDate(mon.getDate() + 6);
+
+    const isCurrent = mon.getTime() === currentMonday;
+    const isThisWeek = mon.getTime() === todayMonday;
+
+    const label = `${mon.getMonth()+1}/${mon.getDate()} ~ ${sun.getMonth()+1}/${sun.getDate()}`;
+    const yearLabel = mon.getFullYear() !== new Date().getFullYear() ? `${mon.getFullYear()}` : '';
+    const badge = isThisWeek ? `<span style="font-size:10px;background:${isCurrent ? 'rgba(255,255,255,0.3)' : 'var(--accent)'};color:#fff;border-radius:4px;padding:1px 5px;margin-left:4px;">이번주</span>` : '';
+
+    html += `<div class="week-picker-item ${isCurrent ? 'current' : ''}" onclick="selectWeekFromPicker(${i})">
+      <span>${yearLabel ? `<span style="font-size:10px;opacity:0.7">${yearLabel} </span>` : ''}${label}${badge}</span>
+    </div>`;
+  }
+
+  html += `</div>`;
+  popup.innerHTML = html;
+
+  // 마우스 휠로 범위 이동
+  const scrollEl = document.getElementById('weekPickerScroll');
+  if (scrollEl) {
+    scrollEl.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 1 : -1;
+      state.weekPickerOffset += delta;
+      renderWeekPickerPopup();
+      // 이벤트가 재등록되므로 closeOnOutside 재등록
+      document.removeEventListener('click', closeWeekPickerOnOutside);
+      setTimeout(() => {
+        document.addEventListener('click', closeWeekPickerOnOutside, { once: true });
+      }, 0);
+    }, { passive: false });
+  }
+}
+
+function selectWeekFromPicker(offsetFromToday) {
+  const todayMonday = getWeekMonday(new Date());
+  const target = new Date(todayMonday);
+  target.setDate(todayMonday.getDate() + offsetFromToday * 7);
+  state.date = target;
+  state.weekPickerOpen = false;
+  const popup = document.getElementById('weekPickerPopup');
+  if (popup) popup.style.display = 'none';
+  if (state.room) loadRoom(state.room);
+}
+
 function renderSchedule() {
   const area = document.getElementById('scheduleArea');
   if (!state.room) { area.innerHTML = ''; return; }
@@ -460,10 +615,12 @@ function renderSchedule() {
         <button class="select-mode-btn cancel-mode ${state.cancelSelectMode ? 'active' : ''}" onclick="toggleCancelSelectMode()">
           <span>${state.cancelSelectMode ? '✓ 취소선택 중' : '✕ 복수 취소'}</span>
         </button>
-        <div class="date-nav">
+        <div class="date-nav" style="position:relative">
           <button class="date-btn" onclick="changeWeek(-1)">‹</button>
           <div class="date-label">${startLabel} ~ ${endLabel}</div>
           <button class="date-btn" onclick="changeWeek(1)">›</button>
+          <button class="week-picker-btn ${state.weekPickerOpen ? 'active' : ''}" onclick="toggleWeekPicker(event)" title="주간 목록 보기">≡</button>
+          <div id="weekPickerPopup" style="display:none;top:36px;right:0;" class="week-picker-popup"></div>
         </div>
       </div>
     </div>
