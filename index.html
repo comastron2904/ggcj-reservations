@@ -164,7 +164,12 @@
   .repeat-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
   .repeat-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   .repeat-desc { font-size: 11px; color: var(--text3); background: var(--surface2); border-radius: var(--radius-sm); padding: 7px 10px; margin-bottom: 4px; line-height: 1.6; }
-  .site-footer { text-align: center; padding: 1.5rem; font-size: 12px; color: var(--text3); border-top: 1px solid var(--border); margin-top: 2rem; }
+  .repeat-btn.year-btn { background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border-color: #f59e0b; color: #92400e; font-weight: 700; }
+  .repeat-btn.year-btn:hover { background: linear-gradient(135deg, #fde68a 0%, #fbbf24 100%); border-color: #d97706; color: #78350f; }
+  .repeat-btn.year-btn.active { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #fff; border-color: #b45309; box-shadow: 0 2px 8px rgba(245,158,11,0.4); }
+  .year-reserve-btn { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important; }
+  .year-reserve-btn:hover { background: linear-gradient(135deg, #d97706 0%, #b45309 100%) !important; }
+  .year-warning { background: #fffbeb; border: 1.5px solid #f59e0b; border-radius: var(--radius-sm); padding: 8px 12px; font-size: 11px; color: #78350f; line-height: 1.7; margin-bottom: 10px; display: flex; gap: 6px; align-items: flex-start; }
 
   @media (max-width: 480px) {
     .site-header { padding: 0 1rem; }
@@ -248,7 +253,7 @@
     </button>
     <input type="file" id="excelImportInput" accept=".xlsx,.xls" style="display:none" onchange="handleExcelImport(event)">
   </div>
-  <div style="font-size:10px;color:var(--text3);letter-spacing:0.3px;text-align:right;">相扶相助</div>
+  <div style="font-size:10px;color:var(--text3);letter-spacing:0.3px;text-align:right;">by DH</div>
 </header>
 
 <div class="container">
@@ -674,10 +679,14 @@ function renderModal(msg='', isSuccess=false) {
     const slots = ctx.slots || [];
     const repeatType = ctx.repeatType || 'once';
     const slotLabels = slots.map(s => `${fmtDisplay(s.date)} ${String(s.hour).padStart(2,'0')}:00`).join(', ');
+    const firstSlot = slots[0];
+    const yearDates = firstSlot ? getRepeatDates(firstSlot.date, 'year') : [];
+    const firstDow = firstSlot ? DAY_KO[firstSlot.date.getDay()] : '';
     const descMap = {
       once:    `선택한 ${slots.length}개 시간대에 각각 예약합니다.`,
       month:   `선택한 각 시간대를 <b>4주(1개월)</b> 동안 반복 예약합니다.`,
-      semester:`선택한 각 시간대를 <b>20주(5개월)</b> 동안 반복 예약합니다.`
+      semester:`선택한 각 시간대를 <b>20주(5개월)</b> 동안 반복 예약합니다.`,
+      year:    `선택한 각 시간대를 <b>${firstSlot ? firstSlot.date.getFullYear() : '해당'}년 연간 전체</b> (요일별 ${yearDates.length}주씩) 반복 예약합니다.`
     };
     box.innerHTML = `
       <div class="modal-title">${state.room} 복수 예약</div>
@@ -689,14 +698,16 @@ function renderModal(msg='', isSuccess=false) {
         <button class="repeat-btn ${repeatType==='once'?'active':''}" onclick="setRepeatType('once')">1회</button>
         <button class="repeat-btn ${repeatType==='month'?'active':''}" onclick="setRepeatType('month')">1개월</button>
         <button class="repeat-btn ${repeatType==='semester'?'active':''}" onclick="setRepeatType('semester')">5개월(한학기)</button>
+        <button class="repeat-btn year-btn ${repeatType==='year'?'active':''}" onclick="setRepeatType('year')">📅 연간 전체</button>
       </div>
       <div class="repeat-desc">${descMap[repeatType]}</div>
+      ${repeatType==='year' ? `<div class="year-warning">⚠️ <span>연간 전체 예약은 시간대별로 <b>최대 ${yearDates.length}주씩</b> 등록됩니다. 이미 예약된 날짜와 수업 시간은 자동으로 건너뜁니다.</span></div>` : ''}
       <div class="field"><label>이름/부서</label><input id="ri_name" type="text" placeholder="홍길동/교육과정부" value="${ctx.savedName||''}"></div>
       <div class="field"><label>예약 사유</label><input id="ri_reason" type="text" placeholder="예: 동아리 활동, 보충수업 등" value="${ctx.savedReason||''}"><div class="field-hint">다른 사람이 예약 현황에서 사유를 확인할 수 있습니다.</div></div>
       <div class="field"><label>비밀번호</label><input id="ri_pw" type="password" placeholder="취소 시 사용할 비밀번호"><div class="field-hint">예약 취소 시 이 비밀번호가 필요합니다.</div></div>
       ${alertHtml}
       <div class="modal-btns">
-        <button class="btn-primary" id="reserveBtn" onclick="doMultiReserve()">예약 확인 (${slots.length}건)</button>
+        <button class="btn-primary ${repeatType==='year'?'year-reserve-btn':''}" id="reserveBtn" onclick="doMultiReserve()">예약 확인 (${slots.length}건${repeatType==='year'?' × 연간':''})</button>
         <button class="btn-secondary" onclick="closeModal()">닫기</button>
       </div>`;
     setTimeout(() => { if (!ctx.savedName) document.getElementById('ri_name')?.focus(); }, 50);
@@ -706,10 +717,12 @@ function renderModal(msg='', isSuccess=false) {
     const d = ctx.date;
     const dayName = DAY_KO[d.getDay()];
     const repeatType = ctx.repeatType || 'once';
+    const yearDates = getRepeatDates(d, 'year');
     const descMap = {
       once:    `${fmtDisplay(d)} 하루만 예약합니다.`,
       month:   `${fmtDisplay(d)}부터 <b>매주 ${dayName}요일</b> ${String(h).padStart(2,'0')}:00을 <b>4주(1개월)</b> 동안 예약합니다.`,
-      semester:`${fmtDisplay(d)}부터 <b>매주 ${dayName}요일</b> ${String(h).padStart(2,'0')}:00을 <b>20주(5개월)</b> 동안 예약합니다.`
+      semester:`${fmtDisplay(d)}부터 <b>매주 ${dayName}요일</b> ${String(h).padStart(2,'0')}:00을 <b>20주(5개월)</b> 동안 예약합니다.`,
+      year:    `<b>${d.getFullYear()}년 매주 ${dayName}요일</b> ${String(h).padStart(2,'0')}:00을 <b>연간 전체 (${yearDates.length}주)</b> 예약합니다.`
     };
     box.innerHTML = `
       <div class="modal-title">${state.room} 예약</div>
@@ -719,14 +732,17 @@ function renderModal(msg='', isSuccess=false) {
         <button class="repeat-btn ${repeatType==='once'?'active':''}" onclick="setRepeatType('once')">1회</button>
         <button class="repeat-btn ${repeatType==='month'?'active':''}" onclick="setRepeatType('month')">1개월</button>
         <button class="repeat-btn ${repeatType==='semester'?'active':''}" onclick="setRepeatType('semester')">5개월(한학기)</button>
+        <button class="repeat-btn year-btn ${repeatType==='year'?'active':''}" onclick="setRepeatType('year')">📅 연간 전체</button>
       </div>
       <div class="repeat-desc">${descMap[repeatType]}</div>
+      ${repeatType==='year' ? `<div class="year-warning">⚠️ <span>연간 전체 예약은 <b>${yearDates.length}건</b>이 한 번에 등록됩니다. 이미 예약된 날짜는 자동으로 건너뜁니다.</span></div>` : ''}
       <div class="field"><label>이름/부서</label><input id="ri_name" type="text" placeholder="홍길동/교육과정부" value="${ctx.savedName||''}"></div>
       <div class="field"><label>예약 사유</label><input id="ri_reason" type="text" placeholder="예: 동아리 활동, 보충수업 등" value="${ctx.savedReason||''}"><div class="field-hint">다른 사람이 예약 현황에서 사유를 확인할 수 있습니다.</div></div>
       <div class="field"><label>비밀번호</label><input id="ri_pw" type="password" placeholder="취소 시 사용할 비밀번호"><div class="field-hint">예약 취소 시 이 비밀번호가 필요합니다.</div></div>
       ${alertHtml}
       <div class="modal-btns">
-        <button class="btn-primary" id="reserveBtn" onclick="doReserve(${h}, '${fmtDate(d)}')">예약 확인</button>
+        <button class="btn-primary ${repeatType==='year'?'year-reserve-btn':''}" id="reserveBtn" onclick="doReserve(${h}, '${fmtDate(d)}')">예약 확인${repeatType==='year'?` (연간 ${yearDates.length}주)`:''}
+        </button>
         <button class="btn-secondary" onclick="closeModal()">닫기</button>
       </div>`;
     setTimeout(() => { if (!ctx.savedName) document.getElementById('ri_name')?.focus(); }, 50);
@@ -946,6 +962,22 @@ function setRepeatType(type) {
 // 반복 예약할 날짜 목록 생성
 function getRepeatDates(startDate, repeatType) {
   const dates = [];
+  if (repeatType === 'year') {
+    // 해당 연도 1월 1일부터 12월 31일까지 같은 요일 전체
+    const year = startDate.getFullYear();
+    const dow = startDate.getDay();
+    // 해당 연도 첫 번째 해당 요일 찾기
+    const jan1 = new Date(year, 0, 1);
+    let diff = dow - jan1.getDay();
+    if (diff < 0) diff += 7;
+    const first = new Date(year, 0, 1 + diff);
+    let cur = new Date(first);
+    while (cur.getFullYear() === year) {
+      dates.push(new Date(cur));
+      cur.setDate(cur.getDate() + 7);
+    }
+    return dates;
+  }
   const weeks = repeatType === 'month' ? 4 : repeatType === 'semester' ? 20 : 1;
   for (let i = 0; i < weeks; i++) {
     const d = new Date(startDate);
@@ -981,32 +1013,42 @@ async function doMultiReserve() {
   }
 
   // 충돌 체크
-  const conflicts = allTasks.filter(t => rsvData[`${state.room}__${fmtDate(t.date)}__${t.hour}`]);
-  if (conflicts.length > 0) {
+  const conflicts = allTasks.filter(t => rsvData[`${state.room}__${fmtDate(t.date)}__${t.hour}`] || isClassHour(state.room, t.date, t.hour));
+  let finalTasks = allTasks;
+  if (repeatType === 'year') {
+    // 연간 예약: 충돌/수업 자동 스킵
+    finalTasks = allTasks.filter(t => !rsvData[`${state.room}__${fmtDate(t.date)}__${t.hour}`] && !isClassHour(state.room, t.date, t.hour));
+    if (finalTasks.length === 0) {
+      renderModal(`선택한 시간대가 모두 이미 예약되어 있거나 수업 시간입니다.`);
+      btn.disabled = false; return;
+    }
+  } else if (conflicts.length > 0) {
     const labels = conflicts.map(t => `${fmtDisplay(t.date)} ${String(t.hour).padStart(2,'0')}:00`).join(', ');
     renderModal(`이미 예약된 시간이 있습니다: ${labels}`);
     btn.disabled = false; return;
   }
 
+  const skipCount = allTasks.length - finalTasks.length;
   let successCount = 0;
   let lastErr = '';
-  btn.textContent = `저장 중... (0/${allTasks.length})`;
-  for (let i = 0; i < allTasks.length; i++) {
-    btn.textContent = `저장 중... (${i+1}/${allTasks.length})`;
-    const { date, hour } = allTasks[i];
+  btn.textContent = `저장 중... (0/${finalTasks.length})`;
+  for (let i = 0; i < finalTasks.length; i++) {
+    btn.textContent = `저장 중... (${i+1}/${finalTasks.length})`;
+    const { date, hour } = finalTasks[i];
     const ok = await sbInsert(state.room, date, hour, name, pwHash, reason);
     if (ok) successCount++;
     else lastErr = `${fmtDisplay(date)} ${String(hour).padStart(2,'0')}:00`;
   }
 
   await loadRoom(state.room);
-  if (successCount === allTasks.length) {
-    renderModal(`${allTasks.length}건 예약이 완료되었습니다! 🎉`, true);
+  const skipMsg = skipCount > 0 ? ` (${skipCount}건 스킵)` : '';
+  if (successCount === finalTasks.length) {
+    renderModal(`${finalTasks.length}건 예약이 완료되었습니다! 🎉${skipMsg}`, true);
   } else if (successCount === 0) {
     renderModal('저장에 실패했습니다. 브라우저 콘솔(F12)에서 오류를 확인해주세요.');
     btn.disabled = false; btn.textContent = `예약 확인 (${slots.length}건)`; return;
   } else {
-    renderModal(`${successCount}/${allTasks.length}건 저장됐습니다. 실패: ${lastErr}`, true);
+    renderModal(`${successCount}/${finalTasks.length}건 저장됐습니다.${skipMsg} 실패: ${lastErr}`, true);
   }
   setTimeout(() => {
     closeModal();
@@ -1035,6 +1077,36 @@ async function doReserve(h, dateStr) {
 
   // 충돌 체크
   const conflicts = dates.filter(d => rsvData[`${state.room}__${fmtDate(d)}__${h}`]);
+  if (repeatType === 'year') {
+    // 연간 예약은 충돌 날짜 자동 스킵
+    const availDates = dates.filter(d => !rsvData[`${state.room}__${fmtDate(d)}__${h}`] && !isClassHour(state.room, d, h));
+    if (availDates.length === 0) {
+      renderModal(`${dates.length}주 전체가 이미 예약되어 있거나 수업 시간입니다.`);
+      btn.disabled = false; return;
+    }
+    const skipCount = dates.length - availDates.length;
+    btn.textContent = `저장 중... (0/${availDates.length})`;
+    let successCount = 0;
+    let lastErr = '';
+    for (let i = 0; i < availDates.length; i++) {
+      btn.textContent = `저장 중... (${i+1}/${availDates.length})`;
+      const ok = await sbInsert(state.room, availDates[i], h, name, pwHash, reason);
+      if (ok) successCount++;
+      else lastErr = fmtDisplay(availDates[i]);
+    }
+    await loadRoom(state.room);
+    const skipMsg = skipCount > 0 ? ` (${skipCount}건 기존 예약/수업 스킵)` : '';
+    if (successCount === availDates.length) {
+      renderModal(`연간 ${successCount}주 예약 완료! 🎉${skipMsg}`, true);
+    } else if (successCount === 0) {
+      renderModal(`저장에 실패했습니다. 브라우저 콘솔(F12)에서 오류를 확인해주세요.`);
+      btn.disabled = false; btn.textContent = '예약 확인'; return;
+    } else {
+      renderModal(`${successCount}/${availDates.length}건 저장됐습니다.${skipMsg} 실패: ${lastErr}`, true);
+    }
+    setTimeout(() => { closeModal(); renderSchedule(); }, 1800);
+    return;
+  }
   if (conflicts.length > 0) {
     const conflictDates = conflicts.map(d => fmtDisplay(d)).join(', ');
     renderModal(`이미 예약된 날짜가 있습니다: ${conflictDates}`);
