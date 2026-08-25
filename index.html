@@ -124,6 +124,20 @@
   .excel-btn:disabled { opacity: 0.6; cursor: not-allowed; }
   .import-btn { border-color: #2563eb; color: #2563eb; }
   .import-btn:hover { background: #2563eb; color: #fff; }
+  .log-btn { border-color: #7c3aed; color: #7c3aed; }
+  .log-btn:hover { background: #7c3aed; color: #fff; }
+
+  /* ── 변경 로그 모달 ── */
+  .modal-box.modal-wide { max-width: 480px; }
+  .log-list { max-height: 55vh; overflow-y: auto; margin-bottom: 4px; }
+  .log-row { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 6px; cursor: pointer; transition: all 0.15s; background: var(--surface); }
+  .log-row:hover { border-color: #7c3aed; background: #faf8ff; }
+  .log-row-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .log-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; flex-shrink: 0; }
+  .log-count { font-size: 12px; font-weight: 700; color: var(--text); }
+  .log-time { font-size: 11px; color: var(--text3); font-family: 'DM Mono', monospace; margin-left: auto; }
+  .log-row-detail { font-size: 12px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log-row.downloading { opacity: 0.5; pointer-events: none; }
   .week-cell.cancel-selected { background: #fee2e2 !important; outline: 2px solid var(--danger); outline-offset: -2px; }
   .multi-bar.cancel-bar { background: #7f1d1d; }
   .multi-bar-confirm.cancel-confirm { background: var(--danger); }
@@ -273,12 +287,16 @@
       <span>📥</span><span> 엑셀 불러오기</span>
     </button>
     <input type="file" id="excelImportInput" accept=".xlsx,.xls" style="display:none" onchange="handleExcelImport(event)">
+    <button class="excel-btn log-btn" onclick="openLogsModal()">
+      <span>🧾</span><span> 변경 로그</span>
+    </button>
   </div>
   <div class="header-right">
     <div class="header-mobile-btns">
       <button class="excel-btn" onclick="exportAllToExcel()">📊</button>
       <button class="excel-btn import-btn" onclick="document.getElementById('excelImportInputMobile').click()">📥</button>
       <input type="file" id="excelImportInputMobile" accept=".xlsx,.xls" style="display:none" onchange="handleExcelImport(event)">
+      <button class="excel-btn log-btn" onclick="openLogsModal()">🧾</button>
     </div>
     <div class="header-tagline">相扶相助</div>
   </div>
@@ -412,6 +430,70 @@ async function sbDelete(room, date, hour) {
     }
     return r.ok || r.status === 204;
   } catch(e) { console.error('sbDelete 예외:', e); return false; }
+}
+// ===================== 예약 변경 로그 =====================
+// 현재 DB에 있는 전체 예약(모든 학습실·모든 날짜)을 가볍게 조회 (백업 스냅샷용)
+async function sbGetAllReservationsFlat() {
+  const url = `${SUPABASE_URL}/rest/v1/reservations?select=room,date,hour,name,reason&order=room.asc,date.asc,hour.asc`;
+  try {
+    const r = await fetch(url, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch(e) { console.error('전체 예약 조회 예외:', e); return null; }
+}
+
+// items: [{room, date:'YYYY-MM-DD', hour, name, reason, action:'add'|'delete'}]
+// 이벤트(추가/삭제, 다중 작업 포함) 1건을 로그로 기록하고 현재 시점 전체 예약 스냅샷을 함께 저장
+async function sbInsertLog(items) {
+  if (!items || items.length === 0) return;
+  const actions = new Set(items.map(i => i.action));
+  const type = actions.size > 1 ? 'mixed' : [...actions][0];
+  const rooms = [...new Set(items.map(i => i.room))];
+
+  const snapshot = await sbGetAllReservationsFlat();
+  if (snapshot === null) { console.error('로그 스냅샷 조회 실패 — 로그 저장 생략'); return; }
+
+  const body = { type, rooms, count: items.length, items, snapshot };
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/reservation_logs`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) console.error('로그 저장 실패:', await r.text());
+  } catch(e) { console.error('로그 저장 예외:', e); }
+}
+
+// 로그 기록은 사용자 조작 흐름을 막지 않도록 결과를 기다리지 않고 호출 (실패해도 예약/취소 자체에는 영향 없음)
+function queueLog(items) {
+  if (!items || items.length === 0) return;
+  sbInsertLog(items);
+}
+
+// 로그 목록 조회 (스냅샷은 용량이 크므로 목록에는 포함하지 않음)
+async function sbGetLogs(limit = 100) {
+  const url = `${SUPABASE_URL}/rest/v1/reservation_logs?select=id,created_at,type,rooms,count,items&order=created_at.desc&limit=${limit}`;
+  try {
+    const r = await fetch(url, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch(e) { console.error('로그 목록 조회 예외:', e); return null; }
+}
+
+// 특정 로그의 백업 스냅샷만 필요할 때 조회 (클릭 시점에 지연 로드)
+async function sbGetLogSnapshot(id) {
+  const url = `${SUPABASE_URL}/rest/v1/reservation_logs?id=eq.${id}&select=snapshot,created_at`;
+  try {
+    const r = await fetch(url, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+    if (!r.ok) return null;
+    const rows = await r.json();
+    return rows[0] || null;
+  } catch(e) { console.error('로그 스냅샷 조회 예외:', e); return null; }
 }
 // =========================================================
 
@@ -701,6 +783,7 @@ function renderModal(msg='', isSuccess=false) {
   const box = document.getElementById('modalBox');
   const { modalType: type, modalCtx: ctx } = state;
   const alertHtml = msg ? `<div class="alert ${isSuccess?'alert-success':'alert-error'}">${msg}</div>` : '';
+  box.classList.toggle('modal-wide', type === 'logs');
 
   if (type === 'multiReserve') {
     const slots = ctx.slots || [];
@@ -829,6 +912,43 @@ function renderModal(msg='', isSuccess=false) {
         <button class="btn-secondary" onclick="closeModal()">닫기</button>
       </div>`;
     setTimeout(() => document.getElementById('ci_pw')?.focus(), 50);
+
+  } else if (type === 'logs') {
+    const logs = ctx.logs || [];
+    const TYPE_LABEL = { add: '➕ 추가', delete: '➖ 삭제', mixed: '➕➖ 추가·삭제' };
+    const TYPE_COLOR = { add: '#2a7a4b', delete: '#b53a2a', mixed: '#c47c10' };
+    let listHtml;
+    if (ctx.loading) {
+      listHtml = `<p style="text-align:center;color:var(--text3);padding:24px 0;font-size:13px">불러오는 중...</p>`;
+    } else if (ctx.error) {
+      listHtml = `<p style="text-align:center;color:var(--danger);padding:24px 0;font-size:13px">로그를 불러오지 못했습니다.<br>테이블이 아직 생성되지 않았을 수 있습니다.</p>`;
+    } else if (logs.length === 0) {
+      listHtml = `<p style="text-align:center;color:var(--text3);padding:24px 0;font-size:13px">아직 기록된 로그가 없습니다.</p>`;
+    } else {
+      listHtml = logs.map(log => {
+        const dt = new Date(log.created_at);
+        const dtLabel = `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,'0')}.${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
+        const roomsLabel = (log.rooms || []).join(', ');
+        const namesPreview = [...new Set((log.items||[]).map(i => i.name).filter(Boolean))].slice(0,3).join(', ');
+        const color = TYPE_COLOR[log.type] || 'var(--text2)';
+        return `
+          <div class="log-row" id="logRow_${log.id}" onclick="downloadLogBackup(${log.id})">
+            <div class="log-row-top">
+              <span class="log-badge" style="background:${color}1a;color:${color}">${TYPE_LABEL[log.type] || log.type}</span>
+              <span class="log-count">${log.count}건</span>
+              <span class="log-time">${dtLabel}</span>
+            </div>
+            <div class="log-row-detail">${roomsLabel}${namesPreview ? ' · ' + namesPreview : ''}</div>
+          </div>`;
+      }).join('');
+    }
+    box.innerHTML = `
+      <div class="modal-title">🧾 예약 변경 로그</div>
+      <p style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.6">예약 추가·취소가 발생할 때마다(동시에 여러 건을 처리해도 1건으로) 이벤트로 기록됩니다.<br>로그를 클릭하면 그 시점의 전체 예약 현황을 엑셀로 백업할 수 있습니다.</p>
+      <div class="log-list">${listHtml}</div>
+      <div class="modal-btns">
+        <button class="btn-secondary" onclick="closeModal()">닫기</button>
+      </div>`;
   }
 }
 
@@ -1068,6 +1188,9 @@ async function doMultiReserve() {
   }
 
   await loadRoom(state.room);
+  if (successCount > 0) {
+    queueLog(finalTasks.map(t => ({ room: state.room, date: fmtDate(t.date), hour: t.hour, name, reason, action: 'add' })));
+  }
   const skipMsg = skipCount > 0 ? ` (${skipCount}건 스킵)` : '';
   if (successCount === finalTasks.length) {
     renderModal(`${finalTasks.length}건 예약이 완료되었습니다! 🎉${skipMsg}`, true);
@@ -1122,6 +1245,9 @@ async function doReserve(h, dateStr) {
       else lastErr = fmtDisplay(availDates[i]);
     }
     await loadRoom(state.room);
+    if (successCount > 0) {
+      queueLog(availDates.map(d => ({ room: state.room, date: fmtDate(d), hour: h, name, reason, action: 'add' })));
+    }
     const skipMsg = skipCount > 0 ? ` (${skipCount}건 기존 예약/수업 스킵)` : '';
     if (successCount === availDates.length) {
       renderModal(`연간 ${successCount}주 예약 완료! 🎉${skipMsg}`, true);
@@ -1151,6 +1277,9 @@ async function doReserve(h, dateStr) {
   }
 
   await loadRoom(state.room);
+  if (successCount > 0) {
+    queueLog(dates.map(d => ({ room: state.room, date: fmtDate(d), hour: h, name, reason, action: 'add' })));
+  }
   if (successCount === dates.length) {
     const label = repeatType === 'once' ? '예약' : `${dates.length}주 반복 예약`;
     renderModal(`${label}이 완료되었습니다! 🎉`, true);
@@ -1199,7 +1328,7 @@ async function doMultiCancel() {
         const rd = r.date.includes('T') ? new Date(r.date) : new Date(r.date + 'T00:00:00');
         return rd.getDay() === dow && r.name === slot.rsv.name && r.pw_hash === pwHash;
       });
-      matched.forEach(r => targets.push({ date: r.date.includes('T') ? new Date(r.date) : new Date(r.date + 'T00:00:00'), hour: slot.hour }));
+      matched.forEach(r => targets.push({ date: r.date.includes('T') ? new Date(r.date) : new Date(r.date + 'T00:00:00'), hour: slot.hour, name: slot.rsv.name, reason: slot.rsv.reason || '' }));
     }
     // 중복 제거
     const seen = new Set();
@@ -1209,7 +1338,7 @@ async function doMultiCancel() {
       seen.add(k); return true;
     });
   } else {
-    targets = validSlots.map(s => ({ date: s.date, hour: s.hour }));
+    targets = validSlots.map(s => ({ date: s.date, hour: s.hour, name: s.rsv?.name || '', reason: s.rsv?.reason || '' }));
   }
 
   if (targets.length === 0) {
@@ -1225,6 +1354,9 @@ async function doMultiCancel() {
     if (ok) successCount++;
   }
 
+  if (successCount > 0) {
+    queueLog(targets.map(t => ({ room: state.room, date: fmtDate(t.date), hour: t.hour, name: t.name || '', reason: t.reason || '', action: 'delete' })));
+  }
   await loadRoom(state.room);
   const extra = wrongPw > 0 ? ` (비밀번호 불일치 ${wrongPw}건 제외)` : '';
   renderModal(`${successCount}건 예약이 취소되었습니다. 🗑️${extra}`, true);
@@ -1237,6 +1369,51 @@ async function doMultiCancel() {
   }, 1600);
 }
 
+
+// ===================== 변경 로그 모달 =====================
+async function openLogsModal() {
+  openModal('logs', { loading: true, logs: [], error: false });
+  const logs = await sbGetLogs(100);
+  if (state.modalType !== 'logs') return; // 조회 중 모달이 닫힌 경우
+  state.modalCtx.loading = false;
+  state.modalCtx.logs = logs || [];
+  state.modalCtx.error = logs === null;
+  renderModal();
+}
+
+async function downloadLogBackup(id) {
+  const rowEl = document.getElementById(`logRow_${id}`);
+  if (rowEl) rowEl.classList.add('downloading');
+  const snap = await sbGetLogSnapshot(id);
+  if (rowEl) rowEl.classList.remove('downloading');
+  if (!snap || !snap.snapshot) {
+    alert('백업 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.');
+    return;
+  }
+  buildAndDownloadBackupExcel(snap.snapshot, snap.created_at);
+}
+
+function buildAndDownloadBackupExcel(snapshot, createdAt) {
+  const dt = new Date(createdAt);
+  const fileTag = `${dt.getFullYear()}${String(dt.getMonth()+1).padStart(2,'0')}${String(dt.getDate()).padStart(2,'0')}_${String(dt.getHours()).padStart(2,'0')}${String(dt.getMinutes()).padStart(2,'0')}`;
+  const PERIOD_MAP = { 9:1, 10:2, 11:3, 12:4, 14:5, 15:6, 16:7 };
+
+  const rows = [['학습실', '날짜', '요일', '교시', '시간', '이름/부서', '예약사유']];
+  [...snapshot]
+    .sort((a, b) => a.room.localeCompare(b.room) || a.date.localeCompare(b.date) || a.hour - b.hour)
+    .forEach(r => {
+      const d = new Date(r.date + 'T00:00:00');
+      const periodNum = PERIOD_MAP[r.hour];
+      rows.push([r.room, r.date, DAY_KO[d.getDay()], periodNum ? `${periodNum}교시` : '', `${String(r.hour).padStart(2,'0')}:00`, r.name, r.reason || '']);
+    });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{ wch: 14 }, { wch: 12 }, { wch: 6 }, { wch: 8 }, { wch: 8 }, { wch: 18 }, { wch: 24 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '백업');
+  XLSX.writeFile(wb, `예약백업_${fileTag}.xlsx`);
+}
+// =========================================================
 
 // ===================== 엑셀 내보내기 (전체 학습실) =====================
 async function exportAllToExcel() {
@@ -1777,6 +1954,12 @@ async function doImportApply() {
     doneCount++;
   }
 
+  const logItems = [
+    ...toDelete.map(d => ({ room: d.room, date: fmtDate(d.date), hour: d.hour, name: d.name || '', reason: d.reason || '', action: 'delete' })),
+    ...toAdd.map(a => ({ room: a.room, date: fmtDate(a.date), hour: a.hour, name: a.name, reason: a.reason || '', action: 'add' }))
+  ];
+  queueLog(logItems);
+
   const changedRooms = new Set([...toAdd.map(a => a.room), ...toDelete.map(d => d.room)]);
   changedRooms.forEach(r => { if (state.reservations[r]) state.reservations[r].loaded = false; });
   if (state.room && changedRooms.has(state.room)) await loadRoom(state.room);
@@ -1810,6 +1993,7 @@ async function doCancel(h, dateStr) {
     // 단건 삭제
     const ok = await sbDelete(state.room, d, h);
     if (ok) {
+      queueLog([{ room: state.room, date: fmtDate(d), hour: h, name: rsv.name, reason: rsv.reason || '', action: 'delete' }]);
       await loadRoom(state.room);
       renderModal('예약이 취소되었습니다.', true);
       setTimeout(() => { closeModal(); renderSchedule(); }, 1300);
@@ -1841,6 +2025,9 @@ async function doCancel(h, dateStr) {
       const rd = targets[i].date.includes('T') ? new Date(targets[i].date) : new Date(targets[i].date + 'T00:00:00');
       const ok = await sbDelete(state.room, rd, h);
       if (ok) successCount++;
+    }
+    if (successCount > 0) {
+      queueLog(targets.map(t => ({ room: state.room, date: fmtDate(t.date), hour: t.hour, name: rsv.name, reason: rsv.reason || '', action: 'delete' })));
     }
     await loadRoom(state.room);
     if (successCount === targets.length) {
