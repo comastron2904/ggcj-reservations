@@ -932,7 +932,7 @@ function renderModal(msg='', isSuccess=false) {
         const namesPreview = [...new Set((log.items||[]).map(i => i.name).filter(Boolean))].slice(0,3).join(', ');
         const color = TYPE_COLOR[log.type] || 'var(--text2)';
         return `
-          <div class="log-row" id="logRow_${log.id}" onclick="downloadLogBackup(${log.id})">
+          <div class="log-row" id="logRow_${log.id}" onclick="handleLogRowClick(${log.id})">
             <div class="log-row-top">
               <span class="log-badge" style="background:${color}1a;color:${color}">${TYPE_LABEL[log.type] || log.type}</span>
               <span class="log-count">${log.count}건</span>
@@ -944,7 +944,7 @@ function renderModal(msg='', isSuccess=false) {
     }
     box.innerHTML = `
       <div class="modal-title">🧾 예약 변경 로그</div>
-      <p style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.6">예약 추가·취소가 발생할 때마다(동시에 여러 건을 처리해도 1건으로) 이벤트로 기록됩니다.<br>로그를 클릭하면 그 시점의 전체 예약 현황을 엑셀로 백업할 수 있습니다.</p>
+      <p style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.6">예약 추가·취소가 발생할 때마다(동시에 여러 건을 처리해도 1건으로) 이벤트로 기록됩니다.<br>로그를 클릭하면 그 작업이 발생하기 이전 시점의 예약 상태로 되돌릴 수 있습니다.</p>
       <div class="log-list">${listHtml}</div>
       <div class="modal-btns">
         <button class="btn-secondary" onclick="closeModal()">닫기</button>
@@ -1372,6 +1372,7 @@ async function doMultiCancel() {
 
 // ===================== 변경 로그 모달 =====================
 async function openLogsModal() {
+  window._restorePending = null;
   openModal('logs', { loading: true, logs: [], error: false });
   const logs = await sbGetLogs(100);
   if (state.modalType !== 'logs') return; // 조회 중 모달이 닫힌 경우
@@ -1381,37 +1382,168 @@ async function openLogsModal() {
   renderModal();
 }
 
-async function downloadLogBackup(id) {
+// 로그를 클릭하면, 그 로그가 기록된 작업이 일어나기 '이전' 시점(=바로 이전 로그가 기록될 당시의 스냅샷)과
+// 현재 DB 상태를 비교해 되돌리기 위한 변경 미리보기를 계산한다.
+async function handleLogRowClick(id) {
   const rowEl = document.getElementById(`logRow_${id}`);
   if (rowEl) rowEl.classList.add('downloading');
-  const snap = await sbGetLogSnapshot(id);
-  if (rowEl) rowEl.classList.remove('downloading');
-  if (!snap || !snap.snapshot) {
-    alert('백업 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.');
+
+  const logs = state.modalCtx.logs || [];
+  const idx = logs.findIndex(l => l.id === id);
+  const targetLog = idx >= 0 ? logs[idx] : null;
+  const prevLog = idx >= 0 ? logs[idx + 1] : null;
+
+  if (!targetLog || !prevLog) {
+    if (rowEl) rowEl.classList.remove('downloading');
+    renderModal('가장 오래된 기록이라 이전 상태를 확인할 수 없어 되돌릴 수 없습니다.');
     return;
   }
-  buildAndDownloadBackupExcel(snap.snapshot, snap.created_at);
+
+  const [currentFlat, prevSnap] = await Promise.all([
+    sbGetAllReservationsFlat(),
+    sbGetLogSnapshot(prevLog.id)
+  ]);
+
+  if (rowEl) rowEl.classList.remove('downloading');
+
+  if (currentFlat === null || !prevSnap || !prevSnap.snapshot) {
+    renderModal('되돌릴 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.');
+    return;
+  }
+
+  const { toAdd, toDelete } = computeRestoreDiff(currentFlat, prevSnap.snapshot);
+
+  if (toAdd.length === 0 && toDelete.length === 0) {
+    renderModal('이미 해당 시점과 동일한 상태입니다. 되돌릴 변경 사항이 없습니다.');
+    return;
+  }
+
+  showRestoreConfirmModal(targetLog, toAdd, toDelete);
 }
 
-function buildAndDownloadBackupExcel(snapshot, createdAt) {
-  const dt = new Date(createdAt);
-  const fileTag = `${dt.getFullYear()}${String(dt.getMonth()+1).padStart(2,'0')}${String(dt.getDate()).padStart(2,'0')}_${String(dt.getHours()).padStart(2,'0')}${String(dt.getMinutes()).padStart(2,'0')}`;
-  const PERIOD_MAP = { 9:1, 10:2, 11:3, 12:4, 14:5, 15:6, 16:7 };
+// 현재 전체 예약 상태(currentFlat)를 목표 시점의 스냅샷(targetSnapshot)과 비교해
+// 되돌리기 위해 추가해야 할 예약과 삭제해야 할 예약 목록을 계산
+function computeRestoreDiff(currentFlat, targetSnapshot) {
+  const keyOf = r => `${r.room}__${r.date}__${r.hour}`;
+  const curMap = new Map(currentFlat.map(r => [keyOf(r), r]));
+  const tgtMap = new Map(targetSnapshot.map(r => [keyOf(r), r]));
 
-  const rows = [['학습실', '날짜', '요일', '교시', '시간', '이름/부서', '예약사유']];
-  [...snapshot]
-    .sort((a, b) => a.room.localeCompare(b.room) || a.date.localeCompare(b.date) || a.hour - b.hour)
-    .forEach(r => {
-      const d = new Date(r.date + 'T00:00:00');
-      const periodNum = PERIOD_MAP[r.hour];
-      rows.push([r.room, r.date, DAY_KO[d.getDay()], periodNum ? `${periodNum}교시` : '', `${String(r.hour).padStart(2,'0')}:00`, r.name, r.reason || '']);
-    });
+  const toDelete = [];
+  const toAdd = [];
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{ wch: 14 }, { wch: 12 }, { wch: 6 }, { wch: 8 }, { wch: 8 }, { wch: 18 }, { wch: 24 }];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, '백업');
-  XLSX.writeFile(wb, `예약백업_${fileTag}.xlsx`);
+  curMap.forEach((r, key) => {
+    if (!tgtMap.has(key)) toDelete.push(r); // 목표 시점엔 없었던 예약 → 삭제
+  });
+  tgtMap.forEach((r, key) => {
+    const cur = curMap.get(key);
+    if (!cur) {
+      toAdd.push(r); // 목표 시점엔 있었지만 지금은 없는 예약 → 다시 추가
+    } else if (cur.name !== r.name || (cur.reason || '') !== (r.reason || '')) {
+      toDelete.push(cur); // 내용이 달라졌다면 현재 것을 지우고
+      toAdd.push(r);       // 목표 시점의 내용으로 재등록
+    }
+  });
+
+  return { toAdd, toDelete };
+}
+
+// ── 되돌리기 확인 화면 (주의문 + 재클릭 절차) ──
+function showRestoreConfirmModal(targetLog, toAdd, toDelete) {
+  const box = document.getElementById('modalBox');
+  const dt = new Date(targetLog.created_at);
+  const dtLabel = `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,'0')}.${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
+  const fmtSlot = item => {
+    const d = new Date(item.date + 'T00:00:00');
+    return `${item.room} · ${fmtDisplay(d)} ${String(item.hour).padStart(2,'0')}:00`;
+  };
+
+  const MAX_PREVIEW = 30;
+  const addHtml = toAdd.length === 0 ? '<p style="color:var(--text3);font-size:12px">없음</p>' :
+    toAdd.slice(0, MAX_PREVIEW).map(a => `<div style="display:flex;align-items:flex-start;gap:6px;padding:4px 0;border-bottom:1px solid var(--border)">
+      <span style="color:#16a34a;font-weight:700;flex-shrink:0">＋</span>
+      <span style="font-size:11px;line-height:1.5"><b>${fmtSlot(a)}</b>
+      &nbsp;<span style="color:var(--text2)">${a.name}${a.reason ? ' (' + a.reason + ')' : ''}</span></span>
+    </div>`).join('') + (toAdd.length > MAX_PREVIEW ? `<p style="font-size:11px;color:var(--text3);margin-top:4px">… 외 ${toAdd.length - MAX_PREVIEW}건</p>` : '');
+
+  const delHtml = toDelete.length === 0 ? '<p style="color:var(--text3);font-size:12px">없음</p>' :
+    toDelete.slice(0, MAX_PREVIEW).map(d => `<div style="display:flex;align-items:flex-start;gap:6px;padding:4px 0;border-bottom:1px solid var(--border)">
+      <span style="color:var(--danger);font-weight:700;flex-shrink:0">－</span>
+      <span style="font-size:11px;line-height:1.5"><b>${fmtSlot(d)}</b>
+      &nbsp;<span style="color:var(--text2)">${d.name}</span></span>
+    </div>`).join('') + (toDelete.length > MAX_PREVIEW ? `<p style="font-size:11px;color:var(--text3);margin-top:4px">… 외 ${toDelete.length - MAX_PREVIEW}건</p>` : '');
+
+  box.classList.add('modal-wide');
+  box.innerHTML = `
+    <div class="modal-title">⏪ 이전 시점으로 되돌리기</div>
+    <div style="font-size:12px;color:var(--danger);background:var(--danger-bg);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:12px;line-height:1.6">
+      ⚠️ <b>${dtLabel}</b> 기록 이전 상태로 되돌립니다.<br>
+      이 시점 <b>이후에 발생한 모든 예약 변경사항이 사라지며, 되돌린 후에는 다시 복구할 수 없습니다.</b><br>
+      다시 추가되는 예약의 취소 비밀번호는 <b>1234</b>로 설정됩니다.
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <div style="flex:1;background:var(--success-bg);border-radius:var(--radius-sm);padding:6px 10px;text-align:center">
+        <div style="font-size:11px;color:var(--success);font-weight:700">다시 추가</div>
+        <div style="font-size:20px;font-weight:700;color:var(--success)">${toAdd.length}건</div>
+      </div>
+      <div style="flex:1;background:var(--danger-bg);border-radius:var(--radius-sm);padding:6px 10px;text-align:center">
+        <div style="font-size:11px;color:var(--danger);font-weight:700">취소(삭제)</div>
+        <div style="font-size:20px;font-weight:700;color:var(--danger)">${toDelete.length}건</div>
+      </div>
+    </div>
+    <div style="max-height:220px;overflow-y:auto;margin-bottom:12px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px">
+      <div style="font-size:11px;font-weight:700;color:var(--success);margin-bottom:4px">다시 추가될 예약</div>
+      ${addHtml}
+      <div style="font-size:11px;font-weight:700;color:var(--danger);margin-top:10px;margin-bottom:4px">취소(삭제)될 예약</div>
+      ${delHtml}
+    </div>
+    <div id="restoreAlert"></div>
+    <div class="modal-btns">
+      <button class="btn-primary btn-danger" id="restoreConfirmBtn" onclick="doRestoreApply()">정말 되돌리기 (총 ${toAdd.length + toDelete.length}건)</button>
+      <button class="btn-secondary" onclick="openLogsModal()">취소</button>
+    </div>`;
+
+  window._restorePending = { targetLog, toAdd, toDelete };
+}
+
+async function doRestoreApply() {
+  const pending = window._restorePending;
+  if (!pending) return;
+  const { toAdd, toDelete } = pending;
+  const btn = document.getElementById('restoreConfirmBtn');
+  btn.disabled = true;
+
+  let doneCount = 0;
+  const total = toAdd.length + toDelete.length;
+  const toDateObj = s => new Date(s + 'T00:00:00');
+
+  for (let i = 0; i < toDelete.length; i++) {
+    btn.textContent = `되돌리는 중... (${doneCount + 1}/${total})`;
+    await sbDelete(toDelete[i].room, toDateObj(toDelete[i].date), toDelete[i].hour);
+    doneCount++;
+  }
+  const defaultPwHash = btoa(unescape(encodeURIComponent('1234')));
+  for (let i = 0; i < toAdd.length; i++) {
+    btn.textContent = `되돌리는 중... (${doneCount + 1}/${total})`;
+    await sbInsert(toAdd[i].room, toDateObj(toAdd[i].date), toAdd[i].hour, toAdd[i].name, defaultPwHash, toAdd[i].reason);
+    doneCount++;
+  }
+
+  // 되돌리기 자체도 하나의 변경 이벤트로 기록 (이후 다시 되돌릴 수 있도록)
+  const logItems = [
+    ...toDelete.map(d => ({ room: d.room, date: d.date, hour: d.hour, name: d.name || '', reason: d.reason || '', action: 'delete' })),
+    ...toAdd.map(a => ({ room: a.room, date: a.date, hour: a.hour, name: a.name, reason: a.reason || '', action: 'add' }))
+  ];
+  queueLog(logItems);
+
+  const changedRooms = new Set([...toAdd.map(a => a.room), ...toDelete.map(d => d.room)]);
+  changedRooms.forEach(r => { if (state.reservations[r]) state.reservations[r].loaded = false; });
+  if (state.room && changedRooms.has(state.room)) await loadRoom(state.room);
+
+  const alertEl = document.getElementById('restoreAlert');
+  if (alertEl) alertEl.innerHTML = `<div class="alert alert-success">✅ 이전 시점으로 되돌렸습니다.</div>`;
+  btn.textContent = '완료';
+  window._restorePending = null;
+  setTimeout(() => closeModal(), 1500);
 }
 // =========================================================
 
